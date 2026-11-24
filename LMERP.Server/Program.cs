@@ -11,6 +11,7 @@ using System.Text;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 
 namespace LMERP.Server
@@ -92,7 +93,7 @@ namespace LMERP.Server
             using (var scope = app.Services.CreateScope())
             {
                 var db = scope.ServiceProvider.GetRequiredService<LoanDbContext>();
-                await db.Database.EnsureCreatedAsync();
+                await db.Database.MigrateAsync();
                 if (app.Environment.IsDevelopment()) await LoanDbContext.SeedAsync(db);
                 await IdentitySeeder.SeedAsync(scope.ServiceProvider, builder.Configuration);
             }
