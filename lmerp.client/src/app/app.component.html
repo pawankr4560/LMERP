@@ -1,24 +1,47 @@
-﻿<h1 id="tableLabel">Weather forecast</h1>
+@if (auth.isAuthenticated()) {
+<div class="app-frame">
+  <button class="sidebar-scrim" [class.visible]="sidebarOpen()" aria-label="Close navigation" (click)="closeSidebar()"></button>
+  <aside class="sidebar" [class.open]="sidebarOpen()">
+    <a class="brand" routerLink="/dashboard" (click)="closeSidebar()">
+      <span class="brand-mark">N</span>
+      <span class="brand-copy"><strong>northstar</strong><small>CAPITAL · ADMIN</small></span>
+      <span class="brand-chevron">⌄</span>
+    </a>
+    <div class="workspace-switch"><span class="workspace-dot"></span><span><strong>Northstar Lending</strong><small>Production workspace</small></span><span class="switch-caret">⌄</span></div>
+    <nav aria-label="Main navigation">
+      @for (group of navGroups; track group.title) {
+        <div class="nav-group">
+          <p class="nav-heading">{{ group.title }}</p>
+          @for (item of group.items; track item.path) {
+            <a class="nav-link" [routerLink]="item.path" routerLinkActive="active" (click)="closeSidebar()">
+              <span class="nav-icon">{{ item.icon }}</span><span>{{ item.label }}</span>
+              @if (item.path === '/loans') { <span class="nav-count">8</span> }
+            </a>
+          }
+        </div>
+      }
+    </nav>
+    <div class="sidebar-bottom">
+      <div class="help-card"><span class="help-icon">✳</span><strong>Need a hand?</strong><p>Our support team is just a message away.</p><button type="button">Visit help center <span>↗</span></button></div>
+      <button class="profile-mini" type="button"><span class="avatar avatar-small">AM</span><span class="profile-copy"><strong>Alex Morgan</strong><small>Administrator</small></span><span class="more">···</span></button>
+    </div>
+  </aside>
 
-<p>This component demonstrates fetching data from the server.</p>
-
-<p *ngIf="!forecasts"><em>Loading... Please refresh once the ASP.NET backend has started. See <a href="https://aka.ms/jspsintegrationangular">https://aka.ms/jspsintegrationangular</a> for more details.</em></p>
-
-<table *ngIf="forecasts">
-    <thead>
-        <tr>
-            <th>Date</th>
-            <th>Temp. (C)</th>
-            <th>Temp. (F)</th>
-            <th>Summary</th>
-        </tr>
-    </thead>
-    <tbody>
-        <tr *ngFor="let forecast of forecasts">
-            <td>{{ forecast.date }}</td>
-            <td>{{ forecast.temperatureC }}</td>
-            <td>{{ forecast.temperatureF }}</td>
-            <td>{{ forecast.summary }}</td>
-        </tr>
-    </tbody>
-</table>
+  <main class="main-area">
+    <header class="topbar">
+      <button class="mobile-menu" type="button" aria-label="Open navigation" (click)="sidebarOpen.set(true)">☰</button>
+      <div class="breadcrumbs"><span>Workspace</span><span class="crumb-divider">/</span><strong>{{ currentPage() }}</strong></div>
+      <div class="top-actions">
+        <label class="global-search"><span>⌕</span><input type="search" placeholder="Search anything..." aria-label="Search anything"><kbd>⌘ K</kbd></label>
+        <button class="icon-button notification-button" type="button" aria-label="Notifications">♧<i></i></button>
+        <span class="top-divider"></span>
+        <button class="user-menu" type="button" (click)="auth.logout()" aria-label="Sign out"><span class="avatar">{{ userInitials() }}</span><span class="user-name">{{ auth.displayName() }}</span><span class="switch-caret">⌄</span></button>
+      </div>
+    </header>
+    <section class="page-content"><router-outlet /></section>
+    <footer class="app-footer"><span>© 2025 Northstar Capital</span><span>All systems operational <i></i></span><span>Privacy&nbsp;&nbsp; · &nbsp;&nbsp;Support</span></footer>
+  </main>
+</div>
+} @else {
+  <router-outlet />
+}

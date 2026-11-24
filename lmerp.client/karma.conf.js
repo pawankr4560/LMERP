@@ -30,6 +30,12 @@
       ]
     },
     reporters: ['progress', 'kjhtml'],
+    customLaunchers: {
+      ChromeHeadlessNoGpu: {
+        base: 'ChromeHeadless',
+        flags: ['--disable-gpu', '--no-sandbox']
+      }
+    },
     port: 9876,
     colors: true,
     logLevel: config.LOG_INFO,
