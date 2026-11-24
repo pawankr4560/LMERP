@@ -1,6 +1,6 @@
 using Microsoft.AspNetCore.Identity;
 
-namespace LMERP.Server.Auth;
+namespace LMERP.Infrastructure.Identity;
 
 public sealed class LoanUser : IdentityUser<int>
 {

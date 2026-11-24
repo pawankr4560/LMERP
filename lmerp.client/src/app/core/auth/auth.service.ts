@@ -1,9 +1,10 @@
 import { HttpClient } from '@angular/common/http';
 import { Injectable, inject, signal } from '@angular/core';
 import { Router } from '@angular/router';
-import { Observable, tap } from 'rxjs';
+import { map, Observable, tap } from 'rxjs';
 
 interface LoginResponse { accessToken: string; expiresAt: string; fullName: string; email: string; roles: string[]; }
+interface ApiEnvelope<T> { success: boolean; message: string; data: T | null; errors: string[]; }
 
 @Injectable({ providedIn: 'root' })
 export class AuthService {
@@ -15,7 +16,7 @@ export class AuthService {
   readonly accessToken = (): string | null => sessionStorage.getItem('northstar.accessToken');
 
   login(email: string, password: string): Observable<LoginResponse> {
-    return this.http.post<LoginResponse>('/api/auth/login', { email, password }).pipe(tap(response => {
+    return this.http.post<ApiEnvelope<LoginResponse>>('/api/auth/login', { email, password }).pipe(map(response => response.data!), tap(response => {
       sessionStorage.setItem('northstar.accessToken', response.accessToken);
       sessionStorage.setItem('northstar.displayName', response.fullName);
       sessionStorage.setItem('northstar.roles', JSON.stringify(response.roles));

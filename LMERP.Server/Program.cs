@@ -1,11 +1,16 @@
 
-using LMERP.Server.Data;
 using LMERP.Server.Auth;
+using LMERP.Application;
+using LMERP.Infrastructure;
+using LMERP.Infrastructure.Identity;
+using LMERP.Infrastructure.Persistence;
+using LMERP.Server.Middleware;
+using LMERP.Server.Responses;
 using System.Security.Cryptography;
 using System.Text;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Identity;
-using Microsoft.EntityFrameworkCore;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.IdentityModel.Tokens;
 
 namespace LMERP.Server
@@ -25,8 +30,8 @@ namespace LMERP.Server
             }
             if (Encoding.UTF8.GetByteCount(signingKey) < 32) throw new InvalidOperationException("Jwt:SigningKey must be at least 32 bytes.");
 
-            builder.Services.AddDbContext<LoanDbContext>(options =>
-                options.UseSqlServer(builder.Configuration.GetConnectionString("LoanDb")));
+            builder.Services.AddApplication();
+            builder.Services.AddInfrastructure(builder.Configuration);
             builder.Services.AddIdentityCore<LoanUser>(options =>
             {
                 options.User.RequireUniqueEmail = true;
@@ -52,10 +57,33 @@ namespace LMERP.Server
                     ValidateLifetime = true,
                     ClockSkew = TimeSpan.FromSeconds(30)
                 };
+                options.Events = new JwtBearerEvents
+                {
+                    OnChallenge = async context =>
+                    {
+                        context.HandleResponse();
+                        context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+                        context.Response.ContentType = "application/json";
+                        await context.Response.WriteAsJsonAsync(BaseResponse<object>.Failed("Authentication is required."));
+                    },
+                    OnForbidden = async context =>
+                    {
+                        context.Response.StatusCode = StatusCodes.Status403Forbidden;
+                        context.Response.ContentType = "application/json";
+                        await context.Response.WriteAsJsonAsync(BaseResponse<object>.Failed("You do not have permission to perform this action."));
+                    }
+                };
             });
             builder.Services.AddAuthorization();
-            builder.Services.AddProblemDetails();
-            builder.Services.AddControllers();
+            builder.Services.AddControllers().ConfigureApiBehaviorOptions(options =>
+            {
+                options.InvalidModelStateResponseFactory = context =>
+                {
+                    var errors = context.ModelState.Values.SelectMany(value => value.Errors)
+                        .Select(error => string.IsNullOrWhiteSpace(error.ErrorMessage) ? "The supplied value is invalid." : error.ErrorMessage).ToArray();
+                    return new BadRequestObjectResult(BaseResponse<object>.Failed("Request validation failed.", errors));
+                };
+            });
             builder.Services.AddEndpointsApiExplorer();
             builder.Services.AddSwaggerGen();
 
@@ -80,13 +108,19 @@ namespace LMERP.Server
             }
 
             app.UseHttpsRedirection();
-            app.UseExceptionHandler();
+            app.UseMiddleware<ApiExceptionMiddleware>();
 
             app.UseAuthentication();
             app.UseAuthorization();
 
 
             app.MapControllers();
+
+            app.Map("/api/{**path}", (HttpContext context) =>
+            {
+                context.Response.StatusCode = StatusCodes.Status404NotFound;
+                return context.Response.WriteAsJsonAsync(BaseResponse<object>.Failed("API endpoint was not found."));
+            });
 
             app.MapFallbackToFile("/index.html");
 

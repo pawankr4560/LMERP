@@ -1,6 +1,16 @@
 @LMERP.Server_HostAddress = http://localhost:5037
+@token = replace-with-access-token
 
-GET {{LMERP.Server_HostAddress}}/weatherforecast/
+GET {{LMERP.Server_HostAddress}}/api/customers
 Accept: application/json
+Authorization: Bearer {{token}}
 
 ###
+
+POST {{LMERP.Server_HostAddress}}/api/auth/login
+Content-Type: application/json
+
+{
+  "email": "admin@example.com",
+  "password": "replace-with-local-secret"
+}

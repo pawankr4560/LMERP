@@ -11,10 +11,11 @@
 using System;
 using System.Reflection;
 
+[assembly: Microsoft.Extensions.Configuration.UserSecrets.UserSecretsIdAttribute("c787c7cc-4752-4236-b6d4-51e28bac7b5e")]
 [assembly: System.Reflection.AssemblyCompanyAttribute("LMERP.Server")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+b6d9c9b6a9ebed66a5fafe106d5044de2eb32b8d")]
 [assembly: System.Reflection.AssemblyProductAttribute("LMERP.Server")]
 [assembly: System.Reflection.AssemblyTitleAttribute("LMERP.Server")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]

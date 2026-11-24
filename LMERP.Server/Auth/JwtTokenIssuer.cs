@@ -3,6 +3,7 @@ using System.Security.Claims;
 using System.Text;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.IdentityModel.Tokens;
+using LMERP.Infrastructure.Identity;
 
 namespace LMERP.Server.Auth;
 

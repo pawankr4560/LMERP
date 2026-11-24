@@ -11,6 +11,26 @@ An ASP.NET Core 8 and Angular 19 starter for a loan management admin workspace.
 - Development seed records for previewing the customer, loan, and dashboard APIs.
 - Preview data for repayment, collection, report, user, settings, and some dashboard visualizations until those API modules are implemented.
 
+## Server layers
+
+- `LMERP.Domain` contains the loan and customer entities.
+- `LMERP.Application` contains request/response DTOs, use-case services, and repository abstractions.
+- `LMERP.Infrastructure` contains Entity Framework Core, SQL Server persistence, Identity, and repository implementations.
+- `LMERP.Server` is the API/presentation layer: controllers, authentication, validation, middleware, and dependency wiring.
+
+All API endpoints use `BaseResponse<T>` with the same envelope:
+
+```json
+{
+  "success": true,
+  "message": "Request completed.",
+  "data": {},
+  "errors": []
+}
+```
+
+Validation, authorization, not-found, conflict, and exception responses use the same fields and include error messages in `errors` where applicable.
+
 ## Configure local access
 
 The default connection string uses SQL Server LocalDB. You can override it with `ConnectionStrings:LoanDb` in user secrets or the `ConnectionStrings__LoanDb` environment variable.

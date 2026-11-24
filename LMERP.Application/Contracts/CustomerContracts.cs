@@ -1,6 +1,6 @@
 using System.ComponentModel.DataAnnotations;
 
-namespace LMERP.Server.Contracts;
+namespace LMERP.Application.Contracts;
 
 public sealed record CustomerResponse(int Id, string FullName, string Phone, string? Email, string? City, string Status, DateTimeOffset CreatedAt, int LoanCount);
 

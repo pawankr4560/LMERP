@@ -1,4 +1,4 @@
-namespace LMERP.Server.Models;
+namespace LMERP.Domain.Entities;
 
 public sealed class LoanApplication
 {
