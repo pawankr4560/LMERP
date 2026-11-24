@@ -1,0 +1,30 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.12.35527.113 d17.12
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "LMERP.Server", "LMERP.Server\LMERP.Server.csproj", "{DD751CB9-2F03-450B-B23E-99773CB5409E}"
+EndProject
+Project("{54A90642-561A-4BB1-A94E-469ADEE60C69}") = "lmerp.client", "lmerp.client\lmerp.client.esproj", "{64C3D8E9-E62A-472C-AF2A-F813FB4FE3CE}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{DD751CB9-2F03-450B-B23E-99773CB5409E}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{DD751CB9-2F03-450B-B23E-99773CB5409E}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{DD751CB9-2F03-450B-B23E-99773CB5409E}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{DD751CB9-2F03-450B-B23E-99773CB5409E}.Release|Any CPU.Build.0 = Release|Any CPU
+		{64C3D8E9-E62A-472C-AF2A-F813FB4FE3CE}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{64C3D8E9-E62A-472C-AF2A-F813FB4FE3CE}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{64C3D8E9-E62A-472C-AF2A-F813FB4FE3CE}.Debug|Any CPU.Deploy.0 = Debug|Any CPU
+		{64C3D8E9-E62A-472C-AF2A-F813FB4FE3CE}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{64C3D8E9-E62A-472C-AF2A-F813FB4FE3CE}.Release|Any CPU.Build.0 = Release|Any CPU
+		{64C3D8E9-E62A-472C-AF2A-F813FB4FE3CE}.Release|Any CPU.Deploy.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+EndGlobal
