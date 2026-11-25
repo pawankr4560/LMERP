@@ -107,8 +107,9 @@ export class AdminPageComponent {
   constructor() {
     this.route.data.subscribe(data => {
       this.section.set(String(data['section'] ?? 'customers'));
-      this.rows.set([...this.definition().rows]);
-      this.previewMode.set(!['customers', 'loans'].includes(this.section()));
+      const hasBackend = ['customers', 'loans'].includes(this.section());
+      this.rows.set(hasBackend ? [] : [...this.definition().rows]);
+      this.previewMode.set(!hasBackend);
       this.statusFilter.set('All statuses'); this.pageIndex.set(0); this.sortKey.set('');
       this.makeForm();
       this.loadRemoteRows();
@@ -170,10 +171,7 @@ export class AdminPageComponent {
           this.rows.update(current => this.editingId() ? current.map(row => Number(row['id']) === customer.id ? this.customerRow(customer) : row) : [this.customerRow(customer), ...current]);
           this.finishSave();
         },
-        error: () => {
-          this.addLocalRow(values);
-          this.finishSave('Saved in this preview session. Start the API to persist customer records.');
-        }
+        error: error => this.notify(this.errorMessage(error))
       });
       return;
     }
@@ -185,7 +183,7 @@ export class AdminPageComponent {
           this.pageIndex.set(0);
           this.finishSave();
         },
-        error: () => { this.addLocalRow({ ...values, customer: this.loanCustomerOptions().find(item => item.value === values['customerId'])?.label ?? 'New customer', amount: values['requestedAmount'], tenure: values['tenureMonths'] }); this.finishSave('Saved in this preview session. Start the API to persist loan applications.'); }
+        error: error => this.notify(this.errorMessage(error))
       });
       return;
     }
@@ -210,12 +208,12 @@ export class AdminPageComponent {
   }
   private loadRemoteRows(): void {
     if (this.section() === 'customers') {
-      this.api.customers().pipe(catchError(() => of(null))).subscribe(customers => {
+      this.api.customers().pipe(catchError(error => { this.notify(this.errorMessage(error)); return of(null); })).subscribe(customers => {
         if (customers) { this.rows.set(customers.map(customer => this.customerRow(customer))); this.previewMode.set(false); }
       });
     } else if (this.section() === 'loans') {
-      this.api.customers().pipe(catchError(() => of([]))).subscribe(customers => this.loanCustomerOptions.set(customers.filter(customer => customer.status === 'Active').map(customer => ({ value: String(customer.id), label: customer.fullName }))));
-      this.api.loans().pipe(catchError(() => of(null))).subscribe(loans => {
+      this.api.customers().pipe(catchError(error => { this.notify(this.errorMessage(error)); return of([]); })).subscribe(customers => this.loanCustomerOptions.set(customers.filter(customer => customer.status === 'Active').map(customer => ({ value: String(customer.id), label: customer.fullName }))));
+      this.api.loans().pipe(catchError(error => { this.notify(this.errorMessage(error)); return of(null); })).subscribe(loans => {
         if (loans) { this.rows.set(loans.map(loan => ({ id: String(loan.id), application: `${loan.customerName}|${loan.applicationNumber}`, product: loan.product, amount: `₹ ${loan.requestedAmount.toLocaleString('en-IN')}`, date: new Date(loan.appliedAt).toLocaleDateString('en-IN'), status: loan.status }))); this.previewMode.set(false); }
       });
     }
@@ -230,7 +228,7 @@ export class AdminPageComponent {
     if (this.section() === 'customers' && row['id']) {
       this.api.deleteCustomer(Number(row['id'])).subscribe({
         next: () => { removeLocal(); this.notify('Customer removed.'); },
-        error: error => this.notify(error.status === 409 ? 'This customer has loans and cannot be deleted. Mark them inactive instead.' : 'Could not remove the customer. Check the API connection.')
+        error: error => this.notify(this.errorMessage(error))
       });
       return;
     }
@@ -238,6 +236,12 @@ export class AdminPageComponent {
     this.notify('Record removed from this preview session.');
   }
   private notify(message: string): void { this.toast.set(message); setTimeout(() => this.toast.set(''), 3200); }
+  private errorMessage(error: unknown): string {
+    const response = error as { error?: { message?: unknown; errors?: unknown } };
+    const message = typeof response?.error?.message === 'string' ? response.error.message : '';
+    const errors = Array.isArray(response?.error?.errors) ? response.error.errors.filter((item): item is string => typeof item === 'string') : [];
+    return [message, ...errors].filter(Boolean).join(' ') || 'Could not complete the request. Check the API connection.';
+  }
   exportCsv(): void {
     const columns = this.definition().columns;
     const lines = [columns.map(column => column.label).join(','), ...this.filteredRows().map(row => columns.map(column => `"${this.cell(row, column.key).replaceAll('"', '""')}"`).join(','))];
