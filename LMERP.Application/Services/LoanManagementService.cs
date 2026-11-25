@@ -115,6 +115,11 @@ public sealed class LoanManagementService(ILoanManagementRepository repository) 
         var loan = await repository.GetLoanForUpdateAsync(id, cancellationToken);
         if (loan is null) return OperationResult<bool>.NotFound("Loan application was not found.");
 
+        if (await repository.LoanHasPaymentsAsync(id, cancellationToken))
+            return OperationResult<bool>.Conflict("Loans with recorded payments cannot be deleted.");
+        if (await repository.HasEmiScheduleAsync(id, cancellationToken))
+            return OperationResult<bool>.Conflict("Loans with a generated EMI schedule cannot be deleted.");
+
         await repository.SoftDeleteLoanAsync(loan, cancellationToken);
         return OperationResult<bool>.Ok(true, "Loan application archived.");
     }

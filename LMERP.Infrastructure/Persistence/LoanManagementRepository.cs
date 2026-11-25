@@ -70,6 +70,9 @@ public sealed class LoanManagementRepository(LoanDbContext db) : ILoanManagement
     public Task<bool> HasEmiScheduleAsync(int loanId, CancellationToken cancellationToken) =>
         db.EmiSchedules.AnyAsync(schedule => schedule.LoanApplicationId == loanId, cancellationToken);
 
+    public Task<bool> LoanHasPaymentsAsync(int loanId, CancellationToken cancellationToken) =>
+        db.EmiPayments.AnyAsync(payment => payment.EmiSchedule!.LoanApplicationId == loanId, cancellationToken);
+
     public Task<LoanProduct?> GetLoanProductAsync(string name, CancellationToken cancellationToken) =>
         db.LoanProducts.SingleOrDefaultAsync(product => product.Name == name && product.IsActive, cancellationToken);
 
