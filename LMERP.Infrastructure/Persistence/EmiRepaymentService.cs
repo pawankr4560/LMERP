@@ -3,6 +3,7 @@ using LMERP.Application.Services;
 using LMERP.Application.Exceptions;
 using LMERP.Domain.Entities;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Configuration;
 
 namespace LMERP.Infrastructure.Persistence;
@@ -54,9 +55,14 @@ public sealed class EmiRepaymentService(LoanDbContext db, IConfiguration configu
         return ToResponse(product);
     }
 
-    public async Task<EmiPaymentResponse> CollectPaymentAsync(int scheduleId, EmiPaymentRequest request, CancellationToken ct)
+    public async Task<EmiPaymentResponse> CollectPaymentAsync(int scheduleId, EmiPaymentRequest request, string actor, string? idempotencyKey, CancellationToken ct)
     {
         await using var transaction = await db.Database.BeginTransactionAsync(System.Data.IsolationLevel.Serializable, ct);
+        if (idempotencyKey is not null)
+        {
+            var replay = await db.EmiPayments.Include(p => p.Allocations).SingleOrDefaultAsync(p => p.EmiScheduleId == scheduleId && p.IdempotencyKey == idempotencyKey, ct);
+            if (replay is not null) return ToPaymentResponse(replay);
+        }
         var schedule = await LoadSchedule(scheduleId, ct) ?? throw new NotFoundException("EMI schedule was not found.");
         var outstandingEmi = EmiOutstanding(schedule);
         var fees = schedule.LateFees.Where(f => f.Status == "Pending").OrderBy(f => f.PenaltyDate).ToList();
@@ -64,7 +70,7 @@ public sealed class EmiRepaymentService(LoanDbContext db, IConfiguration configu
         var totalOutstanding = outstandingEmi + outstandingFees.Values.Sum();
         if (request.Amount > totalOutstanding) throw new DomainValidationException("Payment cannot exceed the EMI and late fee outstanding balance.");
 
-        var payment = new EmiPayment { EmiScheduleId = scheduleId, Amount = request.Amount, Method = request.Method.Trim(), Reference = request.Reference?.Trim() };
+        var payment = new EmiPayment { EmiScheduleId = scheduleId, Amount = request.Amount, Method = request.Method.Trim(), Reference = request.Reference?.Trim(), CollectedBy = actor, IdempotencyKey = idempotencyKey };
         var allocations = EmiPaymentAllocator.Allocate(request.Amount, outstandingEmi, fees.Select(f => new FeeBalance(f.Id, f.PenaltyDate, outstandingFees[f])));
         foreach (var allocation in allocations)
         {
@@ -73,14 +79,26 @@ public sealed class EmiRepaymentService(LoanDbContext db, IConfiguration configu
         }
         var emiAllocation = allocations.Where(a => a.Component == "Emi").Sum(a => a.Amount);
         db.EmiPayments.Add(payment);
-        await db.SaveChangesAsync(ct);
+        try
+        {
+            await db.SaveChangesAsync(ct);
+        }
+        catch (DbUpdateException exception) when (idempotencyKey is not null && exception.InnerException is SqlException { Number: 2601 or 2627 })
+        {
+            await transaction.RollbackAsync(ct);
+            await transaction.DisposeAsync();
+            db.ChangeTracker.Clear();
+            var replay = await db.EmiPayments.Include(p => p.Allocations).SingleOrDefaultAsync(p => p.EmiScheduleId == scheduleId && p.IdempotencyKey == idempotencyKey, ct);
+            if (replay is not null) return ToPaymentResponse(replay);
+            throw;
+        }
         foreach (var fee in fees)
             if (outstandingFees[fee] - payment.Allocations.Where(a => a.EmiLateFeeId == fee.Id).Sum(a => a.Amount) <= 0) fee.Status = "Paid";
         var remainingFeeBalance = fees.Sum(f => Math.Max(0m, outstandingFees[f] - payment.Allocations.Where(a => a.EmiLateFeeId == f.Id).Sum(a => a.Amount)));
         schedule.Status = outstandingEmi - emiAllocation <= 0 && remainingFeeBalance <= 0 ? "Paid" : outstandingEmi - emiAllocation < schedule.EmiAmount ? "Partially paid" : schedule.Status;
         await db.SaveChangesAsync(ct);
         await transaction.CommitAsync(ct);
-        return new EmiPaymentResponse(payment.Id, scheduleId, payment.Amount, payment.ReceivedAt, payment.Method, payment.Reference, payment.Allocations.Select(a => new PaymentAllocationResponse(a.Component, a.Amount, a.EmiLateFeeId)).ToArray());
+        return ToPaymentResponse(payment);
     }
 
     public async Task WaiveFeeAsync(int feeId, string reason, string actor, CancellationToken ct)
@@ -146,6 +164,7 @@ public sealed class EmiRepaymentService(LoanDbContext db, IConfiguration configu
         return Math.Max(0m, balance);
     }
     private static decimal EmiOutstanding(EmiSchedule s) => Math.Max(0m, s.EmiAmount - s.Payments.SelectMany(p => p.Allocations).Where(a => a.Component == "Emi").Sum(a => a.Amount));
+    private static EmiPaymentResponse ToPaymentResponse(EmiPayment payment) => new(payment.Id, payment.EmiScheduleId, payment.Amount, payment.ReceivedAt, payment.Method, payment.Reference, payment.Allocations.Select(a => new PaymentAllocationResponse(a.Component, a.Amount, a.EmiLateFeeId)).ToArray());
     private OverdueEmiResponse ToResponse(EmiSchedule s)
     {
         var fees = s.LateFees.OrderBy(f => f.PenaltyDate).Select(f => new LateFeeResponse(f.Id, f.PenaltyDate, f.BaseAmount, f.PenaltyRate, f.PenaltyAmount, f.Status, f.CreatedAt, f.WaiverReason)).ToArray();

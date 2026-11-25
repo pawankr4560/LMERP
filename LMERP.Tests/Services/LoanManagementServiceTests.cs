@@ -50,12 +50,23 @@ public sealed class LoanManagementServiceTests
         Assert.False(repository.SoftDeleteCalled);
     }
 
+    [Fact]
+    public async Task CreateLoanAsync_UsesSequenceNumberInApplicationFormat()
+    {
+        var repository = new FakeLoanManagementRepository { ActiveCustomer = new Customer { Id = 3, FullName = "Test" }, NextNumber = 1000 };
+        var result = await new LoanManagementService(repository).CreateLoanAsync(new LoanRequest { CustomerId = 3, Product = "Personal loan", RequestedAmount = 10000, TenureMonths = 12, InterestRate = 12 }, CancellationToken.None);
+        Assert.Equal(OperationStatus.Success, result.Status);
+        Assert.Equal($"LN-{DateTime.UtcNow:yyyy}-001000", result.Value!.ApplicationNumber);
+    }
+
     private sealed class FakeLoanManagementRepository : ILoanManagementRepository
     {
         public LoanApplication? Loan { get; init; }
         public bool HasSchedule { get; init; }
         public bool HasPayments { get; init; }
         public bool SoftDeleteCalled { get; private set; }
+        public Customer? ActiveCustomer { get; init; }
+        public long NextNumber { get; init; } = 1000;
 
         public Task<LoanApplication?> GetLoanForUpdateAsync(int id, CancellationToken cancellationToken) => Task.FromResult(Loan?.Id == id ? Loan : null);
         public Task<bool> LoanHasPaymentsAsync(int loanId, CancellationToken cancellationToken) => Task.FromResult(HasPayments);
@@ -71,8 +82,9 @@ public sealed class LoanManagementServiceTests
         public Task DeleteCustomerAsync(Customer customer, CancellationToken cancellationToken) => throw new NotImplementedException();
         public Task<IReadOnlyList<LoanApplication>> GetLoansAsync(CancellationToken cancellationToken) => throw new NotImplementedException();
         public Task<LoanApplication?> GetLoanAsync(int id, CancellationToken cancellationToken) => throw new NotImplementedException();
-        public Task<Customer?> GetActiveCustomerAsync(int id, CancellationToken cancellationToken) => throw new NotImplementedException();
-        public Task AddLoanAsync(LoanApplication loan, CancellationToken cancellationToken) => throw new NotImplementedException();
+        public Task<Customer?> GetActiveCustomerAsync(int id, CancellationToken cancellationToken) => Task.FromResult(ActiveCustomer?.Id == id ? ActiveCustomer : null);
+        public Task AddLoanAsync(LoanApplication loan, CancellationToken cancellationToken) => Task.CompletedTask;
+        public Task<long> GetNextApplicationNumberAsync(CancellationToken cancellationToken) => Task.FromResult(NextNumber);
         public Task UpdateLoanAsync(LoanApplication loan, CancellationToken cancellationToken) => throw new NotImplementedException();
         public Task UpdateLoanAndAddEmiScheduleAsync(LoanApplication loan, IReadOnlyCollection<EmiSchedule> schedule, CancellationToken cancellationToken) => throw new NotImplementedException();
         public Task<LoanProduct?> GetLoanProductAsync(string name, CancellationToken cancellationToken) => throw new NotImplementedException();

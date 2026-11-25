@@ -1,10 +1,11 @@
 using LMERP.Application.Abstractions;
 using LMERP.Application.Contracts;
 using LMERP.Domain.Entities;
+using LMERP.Application.Exceptions;
 
 namespace LMERP.Application.Services;
 
-public sealed class LoanManagementService(ILoanManagementRepository repository) : ILoanManagementService
+public sealed class LoanManagementService(ILoanManagementRepository repository, CustomerPhoneOptions? phoneOptions = null) : ILoanManagementService
 {
     public async Task<IReadOnlyList<CustomerResponse>> GetCustomersAsync(CancellationToken cancellationToken) =>
         (await repository.GetCustomersAsync(cancellationToken)).Select(ToResponse).ToArray();
@@ -17,7 +18,7 @@ public sealed class LoanManagementService(ILoanManagementRepository repository) 
 
     public async Task<OperationResult<CustomerResponse>> CreateCustomerAsync(CustomerRequest request, CancellationToken cancellationToken)
     {
-        var phone = request.Phone.Trim();
+        var phone = PhoneNumber.Normalize(request.Phone, phoneOptions);
         if (await repository.PhoneExistsAsync(phone, null, cancellationToken)) return OperationResult<CustomerResponse>.Conflict("Phone number already exists.");
         var customer = new Customer { FullName = request.FullName.Trim(), Phone = phone, Email = request.Email?.Trim(), City = request.City?.Trim(), Status = request.Status };
         await repository.AddCustomerAsync(customer, cancellationToken);
@@ -28,9 +29,10 @@ public sealed class LoanManagementService(ILoanManagementRepository repository) 
     {
         var customer = await repository.GetCustomerAsync(id, cancellationToken);
         if (customer is null) return OperationResult<CustomerResponse>.NotFound("Customer was not found.");
-        var phone = request.Phone.Trim();
+        var phone = PhoneNumber.Normalize(request.Phone, phoneOptions);
         if (await repository.PhoneExistsAsync(phone, id, cancellationToken)) return OperationResult<CustomerResponse>.Conflict("Phone number already exists.");
         customer.FullName = request.FullName.Trim(); customer.Phone = phone; customer.Email = request.Email?.Trim(); customer.City = request.City?.Trim(); customer.Status = request.Status;
+        customer.RowVersion = ParseRowVersion(request.RowVersion);
         await repository.UpdateCustomerAsync(customer, cancellationToken);
         return OperationResult<CustomerResponse>.Ok(ToResponse(customer), "Customer updated.");
     }
@@ -59,7 +61,7 @@ public sealed class LoanManagementService(ILoanManagementRepository repository) 
         if (customer is null) return OperationResult<LoanResponse>.BadRequest("Select an active customer before creating an application.");
         var loan = new LoanApplication
         {
-            ApplicationNumber = $"LN-{DateTime.UtcNow:yyyy}-{Guid.NewGuid().ToString("N")[..8].ToUpperInvariant()}",
+            ApplicationNumber = $"LN-{DateTime.UtcNow:yyyy}-{await repository.GetNextApplicationNumberAsync(cancellationToken):D6}",
             CustomerId = customer.Id, Customer = customer, Product = request.Product.Trim(), RequestedAmount = request.RequestedAmount,
             TenureMonths = request.TenureMonths, InterestRate = request.InterestRate, IsFlatInterest = request.IsFlatInterest, Status = "Under review"
         };
@@ -77,6 +79,7 @@ public sealed class LoanManagementService(ILoanManagementRepository repository) 
             return OperationResult<LoanResponse>.BadRequest("Status must be Under review, Documents needed, or Approved.");
 
         var hasEmiSchedule = await repository.HasEmiScheduleAsync(id, cancellationToken);
+        loan.RowVersion = ParseRowVersion(request.RowVersion);
         if (hasEmiSchedule)
         {
             var loanTermsChanged = loan.Product != request.Product.Trim()
@@ -135,8 +138,9 @@ public sealed class LoanManagementService(ILoanManagementRepository repository) 
 
     public Task<DashboardSummary> GetDashboardSummaryAsync(CancellationToken cancellationToken) => repository.GetDashboardSummaryAsync(cancellationToken);
 
-    private static CustomerResponse ToResponse(Customer customer) => new(customer.Id, customer.FullName, customer.Phone, customer.Email, customer.City, customer.Status, customer.CreatedAt, customer.LoanApplications.Count);
-    private static LoanResponse ToResponse(LoanApplication loan) => new(loan.Id, loan.ApplicationNumber, loan.CustomerId, loan.Customer?.FullName ?? string.Empty, loan.Product, loan.RequestedAmount, loan.TenureMonths, loan.InterestRate, loan.IsFlatInterest, loan.Status, loan.AppliedAt);
+    private static CustomerResponse ToResponse(Customer customer) => new(customer.Id, customer.FullName, customer.Phone, customer.Email, customer.City, customer.Status, customer.CreatedAt, customer.LoanApplications.Count, Convert.ToBase64String(customer.RowVersion));
+    private static LoanResponse ToResponse(LoanApplication loan) => new(loan.Id, loan.ApplicationNumber, loan.CustomerId, loan.Customer?.FullName ?? string.Empty, loan.Product, loan.RequestedAmount, loan.TenureMonths, loan.InterestRate, loan.IsFlatInterest, loan.Status, loan.AppliedAt, Convert.ToBase64String(loan.RowVersion));
+    private static byte[] ParseRowVersion(string? rowVersion) { try { return Convert.FromBase64String(rowVersion ?? string.Empty); } catch (FormatException) { throw new DomainValidationException("The record version is invalid. Reload and try again."); } }
     private static EmiScheduleResponse ToResponse(EmiSchedule schedule) => new(schedule.Id, schedule.LoanApplicationId, schedule.InstallmentNumber, schedule.DueDate, schedule.PrincipalAmount, schedule.InterestAmount, schedule.EmiAmount, schedule.RemainingBalance, schedule.Status);
 
     private static IReadOnlyList<EmiSchedule> BuildEmiSchedule(LoanApplication loan, DateTimeOffset approvedAtUtc, LoanProduct? product)

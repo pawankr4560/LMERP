@@ -4,6 +4,7 @@ using LMERP.Application;
 using LMERP.Infrastructure;
 using LMERP.Infrastructure.Identity;
 using LMERP.Infrastructure.Persistence;
+using LMERP.Application.Services;
 using LMERP.Server.Middleware;
 using LMERP.Server.Responses;
 using LMERP.Server.Extensions;
@@ -37,6 +38,7 @@ namespace LMERP.Server
             if (Encoding.UTF8.GetByteCount(signingKey) < 32) throw new InvalidOperationException("Jwt:SigningKey must be at least 32 bytes.");
 
             builder.Services.AddApplication();
+            builder.Services.AddSingleton(new CustomerPhoneOptions { DefaultCountryCode = builder.Configuration["Customers:DefaultCountryCode"] ?? "+91" });
             builder.Services.AddInfrastructure(builder.Configuration);
             builder.Services.AddIdentityCore<LoanUser>(options =>
             {

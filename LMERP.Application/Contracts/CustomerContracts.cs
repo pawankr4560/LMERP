@@ -2,7 +2,7 @@ using System.ComponentModel.DataAnnotations;
 
 namespace LMERP.Application.Contracts;
 
-public sealed record CustomerResponse(int Id, string FullName, string Phone, string? Email, string? City, string Status, DateTimeOffset CreatedAt, int LoanCount);
+public sealed record CustomerResponse(int Id, string FullName, string Phone, string? Email, string? City, string Status, DateTimeOffset CreatedAt, int LoanCount, string RowVersion);
 
 public sealed class CustomerRequest
 {
@@ -11,9 +11,10 @@ public sealed class CustomerRequest
     [EmailAddress, StringLength(254)] public string? Email { get; init; }
     [StringLength(100)] public string? City { get; init; }
     [Required, RegularExpression("^(Active|Inactive|Review)$")] public string Status { get; init; } = "Active";
+    public string? RowVersion { get; init; }
 }
 
-public sealed record LoanResponse(int Id, string ApplicationNumber, int CustomerId, string CustomerName, string Product, decimal RequestedAmount, int TenureMonths, decimal InterestRate, bool IsFlatInterest, string Status, DateTimeOffset AppliedAt);
+public sealed record LoanResponse(int Id, string ApplicationNumber, int CustomerId, string CustomerName, string Product, decimal RequestedAmount, int TenureMonths, decimal InterestRate, bool IsFlatInterest, string Status, DateTimeOffset AppliedAt, string RowVersion);
 
 public sealed record EmiScheduleResponse(int Id, int LoanApplicationId, int InstallmentNumber, DateTimeOffset DueDate, decimal PrincipalAmount, decimal InterestAmount, decimal EmiAmount, decimal RemainingBalance, string Status);
 
@@ -36,6 +37,7 @@ public sealed class LoanUpdateRequest
     public bool IsFlatInterest { get; init; } = true;
     [Required, RegularExpression("^(Under review|Documents needed|Approved)$")]
     public string Status { get; init; } = string.Empty;
+    [Required] public string RowVersion { get; init; } = string.Empty;
 }
 
 public sealed record DashboardSummary(int CustomerCount, int TotalLoans, int ActiveLoans, int PendingApplications, decimal TotalDisbursed, decimal OutstandingAmount, int OverdueLoans);

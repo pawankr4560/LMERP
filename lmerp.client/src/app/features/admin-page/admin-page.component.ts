@@ -155,9 +155,11 @@ export class AdminPageComponent {
   openEdit(row: PageRow): void {
     this.makeForm();
     this.editingId.set(row['id'] ? Number(row['id']) : null);
+    if (this.section() === 'customers') this.form.addControl('rowVersion', new FormControl(row['rowVersion'] ?? '', { nonNullable: true, validators: [Validators.required] }));
     if (this.section() === 'loans') {
       if (!this.editingId()) { this.notify('Connect to the API to edit saved loan applications.'); return; }
       this.form.addControl('status', new FormControl('', { nonNullable: true, validators: [Validators.required] }));
+      this.form.addControl('rowVersion', new FormControl(row['rowVersion'] ?? '', { nonNullable: true, validators: [Validators.required] }));
       const customerId = row['customerId'] ?? '';
       if (customerId && !this.loanCustomerOptions().some(option => option.value === customerId)) {
         this.loanCustomerOptions.update(options => [...options, { value: customerId, label: row['customerName'] ?? 'Current customer' }]);
@@ -194,7 +196,7 @@ export class AdminPageComponent {
     if (this.form.invalid) { this.form.markAllAsTouched(); return; }
     const values = this.form.getRawValue() as Record<string, string>;
     if (this.section() === 'customers') {
-      const request = { fullName: values['fullName'], phone: values['phone'], email: values['email'] || undefined, city: values['city'] || undefined, status: values['status'] || 'Active' };
+      const request = { fullName: values['fullName'], phone: values['phone'], email: values['email'] || undefined, city: values['city'] || undefined, status: values['status'] || 'Active', ...(this.editingId() ? { rowVersion: values['rowVersion'] } : {}) };
       const request$ = this.editingId() ? this.api.updateCustomer(this.editingId()!, request) : this.api.createCustomer(request);
       request$.subscribe({
         next: customer => {
@@ -208,7 +210,7 @@ export class AdminPageComponent {
     if (this.section() === 'loans') {
       const loanTerms = { product: values['product'], requestedAmount: Number(values['requestedAmount']), tenureMonths: Number(values['tenureMonths']), interestRate: Number(values['interestRate']), isFlatInterest: values['interestType'] === 'Flat' };
       const request$ = this.editingId()
-        ? this.api.updateLoan(this.editingId()!, { ...loanTerms, status: values['status'] as LoanStatus })
+        ? this.api.updateLoan(this.editingId()!, { ...loanTerms, status: values['status'] as LoanStatus, rowVersion: values['rowVersion'] })
         : this.api.createLoan({ ...loanTerms, customerId: Number(values['customerId']) });
       request$.subscribe({
         next: loan => {
@@ -253,10 +255,10 @@ export class AdminPageComponent {
     }
   }
   private customerRow(customer: CustomerDto): PageRow {
-    return { id: String(customer.id), customer: `${customer.fullName}|CUS-${String(customer.id).padStart(5, '0')}`, phone: customer.phone, email: customer.email ?? '—', city: customer.city ?? '—', loans: `${customer.loanCount} ${customer.loanCount === 1 ? 'loan' : 'loans'}`, joined: new Date(customer.createdAt).toLocaleDateString('en-IN'), status: customer.status };
+    return { id: String(customer.id), rowVersion: customer.rowVersion, customer: `${customer.fullName}|CUS-${String(customer.id).padStart(5, '0')}`, phone: customer.phone, email: customer.email ?? '—', city: customer.city ?? '—', loans: `${customer.loanCount} ${customer.loanCount === 1 ? 'loan' : 'loans'}`, joined: new Date(customer.createdAt).toLocaleDateString('en-IN'), status: customer.status };
   }
   private loanRow(loan: LoanDto): PageRow {
-    return { id: String(loan.id), customerId: String(loan.customerId), customerName: loan.customerName, application: `${loan.customerName}|${loan.applicationNumber}`, applicationNumber: loan.applicationNumber, product: loan.product, requestedAmount: String(loan.requestedAmount), tenureMonths: String(loan.tenureMonths), interestRate: String(loan.interestRate), isFlatInterest: String(loan.isFlatInterest), amount: `₹ ${loan.requestedAmount.toLocaleString('en-IN')}`, date: new Date(loan.appliedAt).toLocaleDateString('en-IN'), status: loan.status };
+    return { id: String(loan.id), rowVersion: loan.rowVersion, customerId: String(loan.customerId), customerName: loan.customerName, application: `${loan.customerName}|${loan.applicationNumber}`, applicationNumber: loan.applicationNumber, product: loan.product, requestedAmount: String(loan.requestedAmount), tenureMonths: String(loan.tenureMonths), interestRate: String(loan.interestRate), isFlatInterest: String(loan.isFlatInterest), amount: `₹ ${loan.requestedAmount.toLocaleString('en-IN')}`, date: new Date(loan.appliedAt).toLocaleDateString('en-IN'), status: loan.status };
   }
   remove(row: PageRow): void {
     const name = this.primary(row[this.definition().columns[0].key] ?? 'this record');

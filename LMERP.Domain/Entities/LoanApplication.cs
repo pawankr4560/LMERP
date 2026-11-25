@@ -15,5 +15,6 @@ public sealed class LoanApplication
     public DateTimeOffset AppliedAt { get; set; } = DateTimeOffset.UtcNow;
     public bool IsDeleted { get; set; }
     public DateTimeOffset? DeletedAtUtc { get; set; }
+    public byte[] RowVersion { get; set; } = [];
     public ICollection<EmiSchedule> EmiSchedules { get; set; } = new List<EmiSchedule>();
 }

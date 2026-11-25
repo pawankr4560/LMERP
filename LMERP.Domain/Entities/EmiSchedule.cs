@@ -6,6 +6,7 @@ public sealed class EmiSchedule
     public int LoanApplicationId { get; set; }
     public LoanApplication? LoanApplication { get; set; }
     public int InstallmentNumber { get; set; }
+    public byte[] RowVersion { get; set; } = [];
     public DateTimeOffset DueDate { get; set; }
     public decimal PrincipalAmount { get; set; }
     public decimal InterestAmount { get; set; }

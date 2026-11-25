@@ -9,5 +9,7 @@ public sealed class EmiPayment
     public DateTimeOffset ReceivedAt { get; set; } = DateTimeOffset.UtcNow;
     public string Method { get; set; } = "Other";
     public string? Reference { get; set; }
+    public string? CollectedBy { get; set; }
+    public string? IdempotencyKey { get; set; }
     public ICollection<EmiPaymentAllocation> Allocations { get; set; } = new List<EmiPaymentAllocation>();
 }

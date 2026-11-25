@@ -29,8 +29,12 @@ public sealed class RepaymentsController(IEmiRepaymentService service) : Control
     }
 
     [HttpPost("emi/{scheduleId:int}/payments")]
-    public async Task<ActionResult<BaseResponse<EmiPaymentResponse>>> CollectPayment(int scheduleId, EmiPaymentRequest request, CancellationToken ct) =>
-        Ok(BaseResponse<EmiPaymentResponse>.Succeeded(await service.CollectPaymentAsync(scheduleId, request, ct), "Payment recorded."));
+    public async Task<ActionResult<BaseResponse<EmiPaymentResponse>>> CollectPayment(int scheduleId, EmiPaymentRequest request, [FromHeader(Name = "Idempotency-Key")] string? idempotencyKey, CancellationToken ct)
+    {
+        if (idempotencyKey is { Length: > 64 } || idempotencyKey is { Length: 0 }) return BadRequest(BaseResponse<EmiPaymentResponse>.Failed("Idempotency-Key must contain between 1 and 64 characters."));
+        var payment = await service.CollectPaymentAsync(scheduleId, request, CurrentActor(), idempotencyKey, ct);
+        return Ok(BaseResponse<EmiPaymentResponse>.Succeeded(payment, "Payment recorded."));
+    }
 
     [Authorize(Roles = Roles.Administrator)]
     [HttpPost("late-fees/{feeId:int}/waive")]

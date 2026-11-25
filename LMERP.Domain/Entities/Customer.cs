@@ -9,5 +9,6 @@ public sealed class Customer
     public string? City { get; set; }
     public string Status { get; set; } = "Active";
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
+    public byte[] RowVersion { get; set; } = [];
     public ICollection<LoanApplication> LoanApplications { get; set; } = new List<LoanApplication>();
 }

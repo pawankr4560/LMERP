@@ -29,6 +29,7 @@ public sealed class LoanDbContext(DbContextOptions<LoanDbContext> options) : Ide
             entity.Property(customer => customer.Status).HasMaxLength(24).IsRequired();
             entity.HasIndex(customer => customer.Phone).IsUnique();
             entity.HasIndex(customer => customer.Email);
+            entity.Property(customer => customer.RowVersion).IsRowVersion();
         });
         modelBuilder.Entity<LoanApplication>(entity =>
         {
@@ -43,6 +44,7 @@ public sealed class LoanDbContext(DbContextOptions<LoanDbContext> options) : Ide
             entity.HasIndex(loan => loan.ApplicationNumber).IsUnique();
             entity.HasOne(loan => loan.Customer).WithMany(customer => customer.LoanApplications).HasForeignKey(loan => loan.CustomerId).OnDelete(DeleteBehavior.Restrict);
             entity.HasQueryFilter(loan => !loan.IsDeleted);
+            entity.Property(loan => loan.RowVersion).IsRowVersion();
         });
         modelBuilder.Entity<EmiSchedule>(entity =>
         {
@@ -65,6 +67,7 @@ public sealed class LoanDbContext(DbContextOptions<LoanDbContext> options) : Ide
             entity.HasMany(schedule => schedule.LateFees).WithOne(fee => fee.EmiSchedule).HasForeignKey(fee => fee.EmiScheduleId).OnDelete(DeleteBehavior.Restrict);
             entity.HasMany(schedule => schedule.Payments).WithOne(payment => payment.EmiSchedule).HasForeignKey(payment => payment.EmiScheduleId).OnDelete(DeleteBehavior.Restrict);
             entity.HasQueryFilter(schedule => !schedule.LoanApplication!.IsDeleted);
+            entity.Property(schedule => schedule.RowVersion).IsRowVersion();
         });
         modelBuilder.Entity<LoanProduct>(entity =>
         {
@@ -87,6 +90,7 @@ public sealed class LoanDbContext(DbContextOptions<LoanDbContext> options) : Ide
             entity.Property(fee => fee.WaivedBy).HasMaxLength(256);
             entity.HasIndex(fee => new { fee.EmiScheduleId, fee.PenaltyDate }).IsUnique();
             entity.HasQueryFilter(fee => !fee.EmiSchedule!.LoanApplication!.IsDeleted);
+            entity.Property(fee => fee.RowVersion).IsRowVersion();
         });
         modelBuilder.Entity<EmiPayment>(entity =>
         {
@@ -94,9 +98,13 @@ public sealed class LoanDbContext(DbContextOptions<LoanDbContext> options) : Ide
             entity.Property(payment => payment.Amount).HasPrecision(18, 2);
             entity.Property(payment => payment.Method).HasMaxLength(32).IsRequired();
             entity.Property(payment => payment.Reference).HasMaxLength(128);
+            entity.Property(payment => payment.CollectedBy).HasMaxLength(256);
+            entity.Property(payment => payment.IdempotencyKey).HasMaxLength(64);
+            entity.HasIndex(payment => new { payment.EmiScheduleId, payment.IdempotencyKey }).IsUnique().HasFilter("[IdempotencyKey] IS NOT NULL");
             entity.HasIndex(payment => payment.ReceivedAt);
             entity.HasQueryFilter(payment => !payment.EmiSchedule!.LoanApplication!.IsDeleted);
         });
+        modelBuilder.HasSequence<long>("LoanApplicationNumbers").StartsAt(1000).IncrementsBy(1);
         modelBuilder.Entity<EmiPaymentAllocation>(entity =>
         {
             entity.HasKey(allocation => allocation.Id);

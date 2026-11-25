@@ -25,7 +25,11 @@ public sealed class LoanManagementRepository(LoanDbContext db) : ILoanManagement
         await db.SaveChangesAsync(cancellationToken);
     }
 
-    public async Task UpdateCustomerAsync(Customer customer, CancellationToken cancellationToken) => await db.SaveChangesAsync(cancellationToken);
+    public async Task UpdateCustomerAsync(Customer customer, CancellationToken cancellationToken)
+    {
+        db.Entry(customer).Property(entity => entity.RowVersion).OriginalValue = customer.RowVersion;
+        await db.SaveChangesAsync(cancellationToken);
+    }
 
     public async Task DeleteCustomerAsync(Customer customer, CancellationToken cancellationToken)
     {
@@ -51,8 +55,14 @@ public sealed class LoanManagementRepository(LoanDbContext db) : ILoanManagement
         await db.SaveChangesAsync(cancellationToken);
     }
 
-    public async Task UpdateLoanAsync(LoanApplication loan, CancellationToken cancellationToken) =>
+    public async Task UpdateLoanAsync(LoanApplication loan, CancellationToken cancellationToken)
+    {
+        db.Entry(loan).Property(entity => entity.RowVersion).OriginalValue = loan.RowVersion;
         await db.SaveChangesAsync(cancellationToken);
+    }
+
+    public Task<long> GetNextApplicationNumberAsync(CancellationToken cancellationToken) =>
+        db.Database.SqlQuery<long>($"SELECT NEXT VALUE FOR LoanApplicationNumbers").SingleAsync(cancellationToken);
 
     public async Task UpdateLoanAndAddEmiScheduleAsync(LoanApplication loan, IReadOnlyCollection<EmiSchedule> schedule, CancellationToken cancellationToken)
     {

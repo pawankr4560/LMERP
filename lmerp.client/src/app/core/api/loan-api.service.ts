@@ -4,12 +4,12 @@ import { map, Observable } from 'rxjs';
 
 interface ApiEnvelope<T> { success: boolean; message: string; data: T | null; errors: string[]; }
 
-export interface CustomerDto { id: number; fullName: string; phone: string; email?: string; city?: string; status: string; createdAt: string; loanCount: number; }
-export interface CustomerWrite { fullName: string; phone: string; email?: string; city?: string; status: string; }
+export interface CustomerDto { id: number; fullName: string; phone: string; email?: string; city?: string; status: string; createdAt: string; loanCount: number; rowVersion: string; }
+export interface CustomerWrite { fullName: string; phone: string; email?: string; city?: string; status: string; rowVersion?: string; }
 export type LoanStatus = 'Under review' | 'Documents needed' | 'Approved';
-export interface LoanDto { id: number; applicationNumber: string; customerId: number; customerName: string; product: string; requestedAmount: number; tenureMonths: number; interestRate: number; isFlatInterest: boolean; status: string; appliedAt: string; }
+export interface LoanDto { id: number; applicationNumber: string; customerId: number; customerName: string; product: string; requestedAmount: number; tenureMonths: number; interestRate: number; isFlatInterest: boolean; status: string; appliedAt: string; rowVersion: string; }
 export interface LoanWrite { customerId: number; product: string; requestedAmount: number; tenureMonths: number; interestRate: number; isFlatInterest: boolean; }
-export interface LoanUpdateWrite { product: string; requestedAmount: number; tenureMonths: number; interestRate: number; isFlatInterest: boolean; status: LoanStatus; }
+export interface LoanUpdateWrite { product: string; requestedAmount: number; tenureMonths: number; interestRate: number; isFlatInterest: boolean; status: LoanStatus; rowVersion: string; }
 export interface DashboardSummaryDto { customerCount: number; totalLoans: number; activeLoans: number; pendingApplications: number; totalDisbursed: number; outstandingAmount: number; overdueLoans: number; }
 
 @Injectable({ providedIn: 'root' })
