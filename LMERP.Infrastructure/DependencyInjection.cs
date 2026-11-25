@@ -13,6 +13,7 @@ public static class DependencyInjection
     {
         services.AddDbContext<LoanDbContext>(options => options.UseSqlServer(configuration.GetConnectionString("LoanDb")));
         services.AddScoped<ILoanManagementRepository, LoanManagementRepository>();
+        services.AddSingleton<IBusinessClock, BusinessClock>();
         services.AddScoped<IEmiRepaymentService, EmiRepaymentService>();
         services.AddHostedService<LateFeeBackgroundService>();
         return services;

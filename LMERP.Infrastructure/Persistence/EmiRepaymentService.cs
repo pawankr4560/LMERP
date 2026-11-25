@@ -1,4 +1,5 @@
 using LMERP.Application.Contracts;
+using LMERP.Application.Abstractions;
 using LMERP.Application.Services;
 using LMERP.Application.Exceptions;
 using LMERP.Domain.Entities;
@@ -8,7 +9,7 @@ using Microsoft.Extensions.Configuration;
 
 namespace LMERP.Infrastructure.Persistence;
 
-public sealed class EmiRepaymentService(LoanDbContext db, IConfiguration configuration) : IEmiRepaymentService
+public sealed class EmiRepaymentService(LoanDbContext db, IBusinessClock businessClock) : IEmiRepaymentService
 {
     public async Task<IReadOnlyList<OverdueEmiResponse>> GetOverdueAsync(CancellationToken ct)
     {
@@ -97,6 +98,7 @@ public sealed class EmiRepaymentService(LoanDbContext db, IConfiguration configu
         var remainingFeeBalance = fees.Sum(f => Math.Max(0m, outstandingFees[f] - payment.Allocations.Where(a => a.EmiLateFeeId == f.Id).Sum(a => a.Amount)));
         schedule.Status = outstandingEmi - emiAllocation <= 0 && remainingFeeBalance <= 0 ? "Paid" : outstandingEmi - emiAllocation < schedule.EmiAmount ? "Partially paid" : schedule.Status;
         await db.SaveChangesAsync(ct);
+        await CloseLoanWhenFullyPaidAsync(schedule.LoanApplicationId, ct);
         await transaction.CommitAsync(ct);
         return ToPaymentResponse(payment);
     }
@@ -113,6 +115,7 @@ public sealed class EmiRepaymentService(LoanDbContext db, IConfiguration configu
         var feesOutstanding = schedule.LateFees.Where(f => f.Status == "Pending" && f.Id != fee.Id).Sum(f => Math.Max(0m, f.PenaltyAmount - f.PaymentAllocations.Sum(a => a.Amount)));
         if (emiOutstanding <= 0 && feesOutstanding <= 0) schedule.Status = "Paid";
         await db.SaveChangesAsync(ct);
+        await CloseLoanWhenFullyPaidAsync(schedule.LoanApplicationId, ct);
         await transaction.CommitAsync(ct);
     }
 
@@ -174,11 +177,17 @@ public sealed class EmiRepaymentService(LoanDbContext db, IConfiguration configu
         return new OverdueEmiResponse(s.Id, s.LoanApplicationId, s.LoanApplication?.ApplicationNumber ?? "", s.LoanApplication?.Customer?.FullName ?? "", s.InstallmentNumber, s.DueDate, s.EmiAmount, emiOutstanding, feesOutstanding, emiOutstanding + feesOutstanding, s.Status, fees, payments);
     }
     private static LoanProductResponse ToResponse(LoanProduct p) => new(p.Id, p.Name, p.IsActive, p.IsLateFeeApplicable, p.LateFeeRate, p.LateFeeCalculationType, p.GracePeriodDays, p.MaximumLateFeeAmount, p.MaximumPenaltyDays);
-    private TimeZoneInfo BusinessTimeZone()
+    private TimeZoneInfo BusinessTimeZone() => businessClock.TimeZone;
+    private DateOnly BusinessToday() => businessClock.Today;
+
+    private async Task CloseLoanWhenFullyPaidAsync(int loanId, CancellationToken ct)
     {
-        var id = configuration["LateFeeProcessing:BusinessTimeZoneId"] ?? "Asia/Kolkata";
-        try { return TimeZoneInfo.FindSystemTimeZoneById(id); }
-        catch (TimeZoneNotFoundException) { return TimeZoneInfo.FindSystemTimeZoneById(id == "Asia/Kolkata" ? "India Standard Time" : id); }
+        var hasUnpaidSchedules = await db.EmiSchedules.AnyAsync(schedule => schedule.LoanApplicationId == loanId && schedule.Status != "Paid", ct);
+        if (hasUnpaidSchedules) return;
+        var loan = await db.LoanApplications.SingleOrDefaultAsync(item => item.Id == loanId, ct);
+        if (loan is null || loan.Status != LMERP.Domain.LoanStatuses.Disbursed) return;
+        loan.Status = LMERP.Domain.LoanStatuses.Closed;
+        loan.ClosedAt = DateTimeOffset.UtcNow;
+        await db.SaveChangesAsync(ct);
     }
-    private DateOnly BusinessToday() => DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(DateTimeOffset.UtcNow, BusinessTimeZone()).DateTime);
 }

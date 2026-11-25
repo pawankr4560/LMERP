@@ -23,9 +23,10 @@ describe('DashboardComponent', () => {
   it('renders portfolio cards and requests the live dashboard summary', () => {
     const req = httpMock.expectOne('/api/dashboard/summary');
     expect(req.request.method).toBe('GET');
-    req.flush({ success: true, message: 'ok', data: { customerCount: 3, totalLoans: 3, activeLoans: 1, pendingApplications: 2, totalDisbursed: 800000, outstandingAmount: 1050000, overdueLoans: 0 }, errors: [] });
+    req.flush({ success: true, message: 'ok', data: { customerCount: 3, totalLoans: 3, activeLoans: 1, pendingApplications: 2, totalDisbursed: 800000, outstandingAmount: 1050000, overdueLoans: 0, overdueAmount: 1050000 }, errors: [] });
     fixture.detectChanges();
     expect(fixture.nativeElement.textContent).toContain('Disbursement overview');
     expect(fixture.nativeElement.textContent).toContain('10.5 L');
+    expect(fixture.componentInstance.currency(10500000)).toBe('₹ 1.1 Cr');
   });
 });

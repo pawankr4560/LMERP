@@ -3,6 +3,7 @@ using LMERP.Infrastructure.Identity;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
+using LMERP.Domain;
 
 namespace LMERP.Infrastructure.Persistence;
 
@@ -40,6 +41,7 @@ public sealed class LoanDbContext(DbContextOptions<LoanDbContext> options) : Ide
             entity.Property(loan => loan.InterestRate).HasPrecision(5, 2).HasDefaultValue(0m);
             entity.Property(loan => loan.IsFlatInterest).HasDefaultValue(true);
             entity.Property(loan => loan.Status).HasMaxLength(32).IsRequired();
+            entity.Property(loan => loan.RejectionReason).HasMaxLength(500);
             entity.Property(loan => loan.IsDeleted).HasDefaultValue(false);
             entity.HasIndex(loan => loan.ApplicationNumber).IsUnique();
             entity.HasOne(loan => loan.Customer).WithMany(customer => customer.LoanApplications).HasForeignKey(loan => loan.CustomerId).OnDelete(DeleteBehavior.Restrict);
@@ -125,9 +127,9 @@ public sealed class LoanDbContext(DbContextOptions<LoanDbContext> options) : Ide
         db.Customers.AddRange(rahul, sneha, arjun);
         await db.SaveChangesAsync();
         db.LoanApplications.AddRange(
-            new LoanApplication { ApplicationNumber = "LN-2025-0841", CustomerId = rahul.Id, Product = "Personal loan", RequestedAmount = 250000m, TenureMonths = 24, InterestRate = 12m, Status = "Under review", AppliedAt = DateTimeOffset.UtcNow.AddHours(-2) },
-            new LoanApplication { ApplicationNumber = "LN-2025-0840", CustomerId = sneha.Id, Product = "Business loan", RequestedAmount = 800000m, TenureMonths = 36, InterestRate = 12m, Status = "Documents needed", AppliedAt = DateTimeOffset.UtcNow.AddHours(-4) },
-            new LoanApplication { ApplicationNumber = "LN-2025-0839", CustomerId = arjun.Id, Product = "Vehicle loan", RequestedAmount = 575000m, TenureMonths = 48, InterestRate = 12m, Status = "Documents needed", AppliedAt = DateTimeOffset.UtcNow.AddDays(-1) });
+            new LoanApplication { ApplicationNumber = "LN-2025-0841", CustomerId = rahul.Id, Product = "Personal loan", RequestedAmount = 250000m, TenureMonths = 24, InterestRate = 12m, Status = LoanStatuses.UnderReview, AppliedAt = DateTimeOffset.UtcNow.AddHours(-2) },
+            new LoanApplication { ApplicationNumber = "LN-2025-0840", CustomerId = sneha.Id, Product = "Business loan", RequestedAmount = 800000m, TenureMonths = 36, InterestRate = 12m, Status = LoanStatuses.DocumentsNeeded, AppliedAt = DateTimeOffset.UtcNow.AddHours(-4) },
+            new LoanApplication { ApplicationNumber = "LN-2025-0839", CustomerId = arjun.Id, Product = "Vehicle loan", RequestedAmount = 575000m, TenureMonths = 48, InterestRate = 12m, Status = LoanStatuses.DocumentsNeeded, AppliedAt = DateTimeOffset.UtcNow.AddDays(-1) });
         await db.SaveChangesAsync();
     }
 }

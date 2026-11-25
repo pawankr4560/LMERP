@@ -40,6 +40,16 @@ public sealed class LoansController(ILoanManagementService service) : Controller
         ToActionResult(await service.UpdateLoanAsync(id, request, cancellationToken));
 
     [Authorize(Roles = Roles.LoanStaff)]
+    [HttpPost("{id:int}/disburse")]
+    public async Task<ActionResult<BaseResponse<LoanResponse>>> Disburse(int id, CancellationToken cancellationToken) =>
+        ToActionResult(await service.DisburseLoanAsync(id, cancellationToken));
+
+    [Authorize(Roles = Roles.LoanStaff)]
+    [HttpPost("{id:int}/reject")]
+    public async Task<ActionResult<BaseResponse<LoanResponse>>> Reject(int id, LoanRejectionRequest request, CancellationToken cancellationToken) =>
+        ToActionResult(await service.RejectLoanAsync(id, request.Reason, cancellationToken));
+
+    [Authorize(Roles = Roles.LoanStaff)]
     [HttpDelete("{id:int}")]
     public async Task<ActionResult<BaseResponse<bool>>> Delete(int id, CancellationToken cancellationToken)
     {

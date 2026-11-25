@@ -35,9 +35,14 @@ public sealed class LoanUpdateRequest
     [Range(1, 360)] public int TenureMonths { get; init; }
     [Range(typeof(decimal), "0.01", "100.00")] public decimal InterestRate { get; init; }
     public bool IsFlatInterest { get; init; } = true;
-    [Required, RegularExpression("^(Under review|Documents needed|Approved)$")]
+    [Required, RegularExpression("^(Under review|Documents needed|Approved|Rejected)$")]
     public string Status { get; init; } = string.Empty;
     [Required] public string RowVersion { get; init; } = string.Empty;
 }
 
-public sealed record DashboardSummary(int CustomerCount, int TotalLoans, int ActiveLoans, int PendingApplications, decimal TotalDisbursed, decimal OutstandingAmount, int OverdueLoans);
+public sealed class LoanRejectionRequest
+{
+    [Required, StringLength(500, MinimumLength = 5)] public string Reason { get; init; } = string.Empty;
+}
+
+public sealed record DashboardSummary(int CustomerCount, int TotalLoans, int ActiveLoans, int PendingApplications, decimal TotalDisbursed, decimal OutstandingAmount, int OverdueLoans, decimal OverdueAmount);

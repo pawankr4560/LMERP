@@ -1,11 +1,12 @@
 using LMERP.Application.Abstractions;
 using LMERP.Application.Contracts;
 using LMERP.Domain.Entities;
+using LMERP.Domain;
 using Microsoft.EntityFrameworkCore;
 
 namespace LMERP.Infrastructure.Persistence;
 
-public sealed class LoanManagementRepository(LoanDbContext db) : ILoanManagementRepository
+public sealed class LoanManagementRepository(LoanDbContext db, IBusinessClock businessClock) : ILoanManagementRepository
 {
     public async Task<IReadOnlyList<Customer>> GetCustomersAsync(CancellationToken cancellationToken) =>
         await db.Customers.AsNoTracking().Include(customer => customer.LoanApplications).OrderByDescending(customer => customer.CreatedAt).ToListAsync(cancellationToken);
@@ -83,6 +84,9 @@ public sealed class LoanManagementRepository(LoanDbContext db) : ILoanManagement
     public Task<bool> LoanHasPaymentsAsync(int loanId, CancellationToken cancellationToken) =>
         db.EmiPayments.AnyAsync(payment => payment.EmiSchedule!.LoanApplicationId == loanId, cancellationToken);
 
+    public Task<bool> HasUnpaidEmiSchedulesAsync(int loanId, CancellationToken cancellationToken) =>
+        db.EmiSchedules.AnyAsync(schedule => schedule.LoanApplicationId == loanId && schedule.Status != "Paid", cancellationToken);
+
     public Task<LoanProduct?> GetLoanProductAsync(string name, CancellationToken cancellationToken) =>
         db.LoanProducts.SingleOrDefaultAsync(product => product.Name == name && product.IsActive, cancellationToken);
 
@@ -94,13 +98,30 @@ public sealed class LoanManagementRepository(LoanDbContext db) : ILoanManagement
 
     public async Task<DashboardSummary> GetDashboardSummaryAsync(CancellationToken cancellationToken)
     {
-        var loans = await db.LoanApplications.AsNoTracking().ToListAsync(cancellationToken);
+        var totalLoans = await db.LoanApplications.CountAsync(cancellationToken);
+        var activeLoans = await db.LoanApplications.CountAsync(loan => loan.Status == LoanStatuses.Disbursed, cancellationToken);
+        var pendingApplications = await db.LoanApplications.CountAsync(loan => loan.Status == LoanStatuses.UnderReview || loan.Status == LoanStatuses.DocumentsNeeded, cancellationToken);
+        var totalDisbursed = await db.LoanApplications
+            .Where(loan => loan.Status == LoanStatuses.Disbursed || loan.Status == LoanStatuses.Closed)
+            .SumAsync(loan => (decimal?)loan.RequestedAmount, cancellationToken) ?? 0m;
+        var scheduleBalances = db.EmiSchedules.AsNoTracking()
+            .Where(schedule => schedule.LoanApplication!.Status == LoanStatuses.Disbursed && schedule.Status != "Paid")
+            .Select(schedule => new
+            {
+                schedule.LoanApplicationId,
+                schedule.DueDate,
+                Balance = schedule.EmiAmount - db.EmiPaymentAllocations
+                    .Where(allocation => allocation.EmiScheduleId == schedule.Id && allocation.Component == "Emi")
+                    .Sum(allocation => (decimal?)allocation.Amount).GetValueOrDefault()
+            });
+        var outstanding = await scheduleBalances.SumAsync(schedule => (decimal?)schedule.Balance, cancellationToken) ?? 0m;
+        var localMidnight = businessClock.Today.ToDateTime(TimeOnly.MinValue);
+        var businessDayStart = new DateTimeOffset(localMidnight, businessClock.TimeZone.GetUtcOffset(localMidnight));
+        var overdueSchedules = scheduleBalances.Where(schedule => schedule.DueDate < businessDayStart && schedule.Balance > 0m);
+        var overdueLoans = await overdueSchedules.Select(schedule => schedule.LoanApplicationId).Distinct().CountAsync(cancellationToken);
+        var overdueAmount = await overdueSchedules.SumAsync(schedule => (decimal?)schedule.Balance, cancellationToken) ?? 0m;
         return new DashboardSummary(
-            await db.Customers.CountAsync(cancellationToken), loans.Count,
-            loans.Count(loan => loan.Status is "Approved" or "Disbursed"),
-            loans.Count(loan => loan.Status is "Under review" or "Documents needed"),
-            loans.Where(loan => loan.Status == "Disbursed").Sum(loan => loan.RequestedAmount),
-            loans.Where(loan => loan.Status is "Approved" or "Disbursed" or "Overdue").Sum(loan => loan.RequestedAmount),
-            loans.Count(loan => loan.Status == "Overdue"));
+            await db.Customers.CountAsync(cancellationToken), totalLoans, activeLoans, pendingApplications,
+            totalDisbursed, outstanding, overdueLoans, overdueAmount);
     }
 }

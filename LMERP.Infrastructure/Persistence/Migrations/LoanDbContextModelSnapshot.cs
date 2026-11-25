@@ -325,10 +325,16 @@ namespace LMERP.Infrastructure.Persistence.Migrations
                     b.Property<DateTimeOffset>("AppliedAt")
                         .HasColumnType("datetimeoffset");
 
+                    b.Property<DateTimeOffset?>("ClosedAt")
+                        .HasColumnType("datetimeoffset");
+
                     b.Property<int>("CustomerId")
                         .HasColumnType("int");
 
                     b.Property<DateTimeOffset?>("DeletedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<DateTimeOffset?>("DisbursedAt")
                         .HasColumnType("datetimeoffset");
 
                     b.Property<decimal>("InterestRate")
@@ -351,6 +357,10 @@ namespace LMERP.Infrastructure.Persistence.Migrations
                         .IsRequired()
                         .HasMaxLength(80)
                         .HasColumnType("nvarchar(80)");
+
+                    b.Property<string>("RejectionReason")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
 
                     b.Property<decimal>("RequestedAmount")
                         .HasPrecision(18, 2)

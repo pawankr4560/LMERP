@@ -11,10 +11,13 @@ public sealed class LoanApplication
     public int TenureMonths { get; set; }
     public decimal InterestRate { get; set; }
     public bool IsFlatInterest { get; set; } = true;
-    public string Status { get; set; } = "Under review";
+    public string Status { get; set; } = LoanStatuses.UnderReview;
     public DateTimeOffset AppliedAt { get; set; } = DateTimeOffset.UtcNow;
     public bool IsDeleted { get; set; }
     public DateTimeOffset? DeletedAtUtc { get; set; }
     public byte[] RowVersion { get; set; } = [];
+    public DateTimeOffset? DisbursedAt { get; set; }
+    public DateTimeOffset? ClosedAt { get; set; }
+    public string? RejectionReason { get; set; }
     public ICollection<EmiSchedule> EmiSchedules { get; set; } = new List<EmiSchedule>();
 }

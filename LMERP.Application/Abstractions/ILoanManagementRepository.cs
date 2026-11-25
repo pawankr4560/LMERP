@@ -23,6 +23,7 @@ public interface ILoanManagementRepository
     Task SoftDeleteLoanAsync(LoanApplication loan, CancellationToken cancellationToken);
     Task<bool> HasEmiScheduleAsync(int loanId, CancellationToken cancellationToken);
     Task<bool> LoanHasPaymentsAsync(int loanId, CancellationToken cancellationToken);
+    Task<bool> HasUnpaidEmiSchedulesAsync(int loanId, CancellationToken cancellationToken);
     Task<LoanProduct?> GetLoanProductAsync(string name, CancellationToken cancellationToken);
     Task<IReadOnlyList<EmiSchedule>> GetEmiScheduleAsync(int loanId, CancellationToken cancellationToken);
     Task<Contracts.DashboardSummary> GetDashboardSummaryAsync(CancellationToken cancellationToken);

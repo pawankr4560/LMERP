@@ -139,6 +139,25 @@ export class AdminPageComponent {
     if (['overdue','rejected','escalated','inactive'].includes(normalized)) return 'bad';
     return 'pending';
   }
+  disburse(row: PageRow): void {
+    const id = Number(row['id']);
+    if (!id) return;
+    this.api.disburseLoan(id).subscribe({
+      next: loan => { this.rows.update(rows => rows.map(item => Number(item['id']) === id ? this.loanRow(loan) : item)); this.notify('Loan disbursed and EMI schedule generated.'); },
+      error: error => this.notify(this.errorMessage(error))
+    });
+  }
+  reject(row: PageRow): void {
+    const reason = window.prompt('Enter a rejection reason (5–500 characters):');
+    if (reason === null) return;
+    if (reason.trim().length < 5 || reason.trim().length > 500) { this.notify('Rejection reason must contain between 5 and 500 characters.'); return; }
+    const id = Number(row['id']);
+    if (!id) return;
+    this.api.rejectLoan(id, reason.trim()).subscribe({
+      next: loan => { this.rows.update(rows => rows.map(item => Number(item['id']) === id ? this.loanRow(loan) : item)); this.notify('Loan application rejected.'); },
+      error: error => this.notify(this.errorMessage(error))
+    });
+  }
   makeForm(): void {
     const controls = new FormRecord<FormControl<string>>({});
     for (const field of this.definition().fields) {

@@ -46,13 +46,16 @@ export class DashboardComponent {
         if (item.label === 'Total disbursed') return { ...item, value: this.currency(summary.totalDisbursed) };
         if (item.label === 'Active loans') return { ...item, value: summary.activeLoans.toLocaleString('en-IN') };
         if (item.label === 'Outstanding') return { ...item, value: this.currency(summary.outstandingAmount) };
-        if (item.label === 'Overdue amount') return { ...item, value: this.currency(0), note: `${summary.overdueLoans} overdue loans` };
+        if (item.label === 'Overdue amount') return { ...item, value: this.currency(summary.overdueAmount), note: `${summary.overdueLoans} overdue loans` };
         return item;
       }))
     });
   }
 
-  private currency(amount: number): string {
-    return `₹ ${new Intl.NumberFormat('en-IN', { maximumFractionDigits: 1 }).format(amount / 100000)} L`;
+  currency(amount: number): string {
+    const formatter = new Intl.NumberFormat('en-IN', { maximumFractionDigits: 1 });
+    if (amount >= 1e7) return `₹ ${formatter.format(amount / 1e7)} Cr`;
+    if (amount >= 1e5) return `₹ ${formatter.format(amount / 1e5)} L`;
+    return `₹ ${new Intl.NumberFormat('en-IN', { maximumFractionDigits: 2 }).format(amount)}`;
   }
 }
