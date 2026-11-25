@@ -24,7 +24,7 @@ public static class IdentitySeeder
             var environment = services.GetRequiredService<IHostEnvironment>();
             if (!environment.IsDevelopment() && !(await users.GetUsersInRoleAsync("Administrator")).Any())
             {
-                var logger = services.GetRequiredService<ILogger<IdentitySeeder>>();
+                var logger = services.GetRequiredService<ILoggerFactory>().CreateLogger(nameof(IdentitySeeder));
                 logger.LogWarning("No Administrator user exists. Configure BootstrapAdmin:Email and BootstrapAdmin:Password using a secret store to create one.");
             }
             return;
