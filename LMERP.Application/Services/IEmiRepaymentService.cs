@@ -7,6 +7,7 @@ public interface IEmiRepaymentService
     Task<IReadOnlyList<OverdueEmiResponse>> GetOverdueAsync(CancellationToken cancellationToken);
     Task<RepaymentSummaryResponse> GetSummaryAsync(CancellationToken cancellationToken);
     Task<OverdueEmiResponse?> GetDetailsAsync(int scheduleId, CancellationToken cancellationToken);
+    Task<IReadOnlyList<EmiPaymentResponse>> GetPaymentsAsync(int scheduleId, CancellationToken cancellationToken);
     Task<IReadOnlyList<LoanProductResponse>> GetProductsAsync(CancellationToken cancellationToken);
     Task<LoanProductResponse> SaveProductAsync(int? id, LoanProductLateFeeRequest request, CancellationToken cancellationToken);
     Task<EmiPaymentResponse> CollectPaymentAsync(int scheduleId, EmiPaymentRequest request, string actor, string? idempotencyKey, CancellationToken cancellationToken);

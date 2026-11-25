@@ -28,6 +28,15 @@ public sealed class EmiRepaymentService(LoanDbContext db, IBusinessClock busines
         return schedule is null ? null : ToResponse(schedule);
     }
 
+    public async Task<IReadOnlyList<EmiPaymentResponse>> GetPaymentsAsync(int scheduleId, CancellationToken ct)
+    {
+        if (!await db.EmiSchedules.AnyAsync(schedule => schedule.Id == scheduleId, ct))
+            throw new NotFoundException("EMI schedule was not found.");
+        var payments = await db.EmiPayments.AsNoTracking().Include(payment => payment.Allocations)
+            .Where(payment => payment.EmiScheduleId == scheduleId).OrderByDescending(payment => payment.ReceivedAt).ToListAsync(ct);
+        return payments.Select(ToPaymentResponse).ToArray();
+    }
+
     public async Task<RepaymentSummaryResponse> GetSummaryAsync(CancellationToken ct)
     {
         var items = await GetOverdueAsync(ct);

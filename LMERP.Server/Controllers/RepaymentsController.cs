@@ -28,6 +28,10 @@ public sealed class RepaymentsController(IEmiRepaymentService service) : Control
         return details is null ? NotFound(BaseResponse<OverdueEmiResponse>.Failed("EMI schedule was not found.")) : Ok(BaseResponse<OverdueEmiResponse>.Succeeded(details));
     }
 
+    [HttpGet("emi/{scheduleId:int}/payments")]
+    public async Task<ActionResult<BaseResponse<IReadOnlyList<EmiPaymentResponse>>>> GetPayments(int scheduleId, CancellationToken ct) =>
+        Ok(BaseResponse<IReadOnlyList<EmiPaymentResponse>>.Succeeded(await service.GetPaymentsAsync(scheduleId, ct)));
+
     [HttpPost("emi/{scheduleId:int}/payments")]
     public async Task<ActionResult<BaseResponse<EmiPaymentResponse>>> CollectPayment(int scheduleId, EmiPaymentRequest request, [FromHeader(Name = "Idempotency-Key")] string? idempotencyKey, CancellationToken ct)
     {
