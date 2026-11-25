@@ -1,5 +1,8 @@
 using System.Text.Json;
+using LMERP.Application.Exceptions;
 using LMERP.Server.Responses;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Data.SqlClient;
 
 namespace LMERP.Server.Middleware;
 
@@ -12,19 +15,20 @@ public sealed class ApiExceptionMiddleware(RequestDelegate next, ILogger<ApiExce
         try { await next(context); }
         catch (Exception exception) when (context.Request.Path.StartsWithSegments("/api"))
         {
-            if (exception is ArgumentException or KeyNotFoundException)
+            var (status, message) = exception switch
             {
-                context.Response.Clear();
-                context.Response.StatusCode = exception is KeyNotFoundException ? StatusCodes.Status404NotFound : StatusCodes.Status400BadRequest;
-                context.Response.ContentType = "application/json";
-                await JsonSerializer.SerializeAsync(context.Response.Body, BaseResponse<object>.Failed(exception.Message), JsonOptions, context.RequestAborted);
-                return;
-            }
-            logger.LogError(exception, "Unhandled API exception for {Path}", context.Request.Path);
+                DomainValidationException => (StatusCodes.Status400BadRequest, exception.Message),
+                NotFoundException => (StatusCodes.Status404NotFound, exception.Message),
+                ConflictException => (StatusCodes.Status409Conflict, exception.Message),
+                DbUpdateConcurrencyException => (StatusCodes.Status409Conflict, "The record was modified by someone else. Reload and try again."),
+                DbUpdateException { InnerException: SqlException { Number: 2601 or 2627 } } => (StatusCodes.Status409Conflict, "A record with the same unique value already exists."),
+                _ => (StatusCodes.Status500InternalServerError, "An unexpected error occurred.")
+            };
+            if (status == StatusCodes.Status500InternalServerError) logger.LogError(exception, "Unhandled API exception for {Path}", context.Request.Path);
             context.Response.Clear();
-            context.Response.StatusCode = StatusCodes.Status500InternalServerError;
+            context.Response.StatusCode = status;
             context.Response.ContentType = "application/json";
-            await JsonSerializer.SerializeAsync(context.Response.Body, BaseResponse<object>.Failed("An unexpected error occurred."), JsonOptions, context.RequestAborted);
+            await JsonSerializer.SerializeAsync(context.Response.Body, BaseResponse<object>.Failed(message), JsonOptions, context.RequestAborted);
         }
     }
 }

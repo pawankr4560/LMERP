@@ -98,6 +98,7 @@ namespace LMERP.Server
                 await IdentitySeeder.SeedAsync(scope.ServiceProvider, builder.Configuration);
             }
 
+            app.UseMiddleware<ApiExceptionMiddleware>();
             app.UseDefaultFiles();
             app.UseStaticFiles();
 
@@ -109,7 +110,6 @@ namespace LMERP.Server
             }
 
             app.UseHttpsRedirection();
-            app.UseMiddleware<ApiExceptionMiddleware>();
 
             app.UseAuthentication();
             app.UseAuthorization();

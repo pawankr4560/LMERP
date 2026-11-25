@@ -9,6 +9,7 @@ public sealed class EmiLateFee
     public decimal BaseAmount { get; set; }
     public decimal PenaltyRate { get; set; }
     public decimal PenaltyAmount { get; set; }
+    public decimal? WaivedAmount { get; set; }
     public string Status { get; set; } = "Pending";
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
     public DateTimeOffset? WaivedAt { get; set; }

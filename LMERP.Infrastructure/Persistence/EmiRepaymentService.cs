@@ -1,5 +1,6 @@
 using LMERP.Application.Contracts;
 using LMERP.Application.Services;
+using LMERP.Application.Exceptions;
 using LMERP.Domain.Entities;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
@@ -36,14 +37,14 @@ public sealed class EmiRepaymentService(LoanDbContext db, IConfiguration configu
 
     public async Task<LoanProductResponse> SaveProductAsync(int? id, LoanProductLateFeeRequest request, CancellationToken ct)
     {
-        if (request.IsLateFeeApplicable && request.LateFeeRate <= 0) throw new ArgumentException("A positive late fee rate is required when late fees are enabled.");
-        if (request.IsLateFeeApplicable && request.MaximumLateFeeAmount is null && request.MaximumPenaltyDays is null) throw new ArgumentException("Configure a maximum fee amount or maximum penalty days before enabling late fees.");
+        if (request.IsLateFeeApplicable && request.LateFeeRate <= 0) throw new DomainValidationException("A positive late fee rate is required when late fees are enabled.");
+        if (request.IsLateFeeApplicable && request.MaximumLateFeeAmount is null && request.MaximumPenaltyDays is null) throw new DomainValidationException("Configure a maximum fee amount or maximum penalty days before enabling late fees.");
         var name = request.Name.Trim();
         var product = id.HasValue ? await db.LoanProducts.FindAsync([id.Value], ct) : null;
-        if (id.HasValue && product is null) throw new KeyNotFoundException("Loan product was not found.");
+        if (id.HasValue && product is null) throw new NotFoundException("Loan product was not found.");
         if (product is not null && product.Name != name && await db.LoanApplications.AnyAsync(loan => loan.Product == product.Name, ct))
-            throw new ArgumentException("This product name is already referenced by loan applications and cannot be changed.");
-        if (await db.LoanProducts.AnyAsync(x => x.Name == name && (!id.HasValue || x.Id != id.Value), ct)) throw new ArgumentException("A loan product with this name already exists.");
+            throw new ConflictException("This product name is already referenced by loan applications and cannot be changed.");
+        if (await db.LoanProducts.AnyAsync(x => x.Name == name && (!id.HasValue || x.Id != id.Value), ct)) throw new ConflictException("A loan product with this name already exists.");
         product ??= new LoanProduct();
         product.Name = name; product.IsActive = request.IsActive; product.IsLateFeeApplicable = request.IsLateFeeApplicable;
         product.LateFeeRate = request.LateFeeRate; product.LateFeeCalculationType = request.LateFeeCalculationType;
@@ -56,12 +57,12 @@ public sealed class EmiRepaymentService(LoanDbContext db, IConfiguration configu
     public async Task<EmiPaymentResponse> CollectPaymentAsync(int scheduleId, EmiPaymentRequest request, CancellationToken ct)
     {
         await using var transaction = await db.Database.BeginTransactionAsync(System.Data.IsolationLevel.Serializable, ct);
-        var schedule = await LoadSchedule(scheduleId, ct) ?? throw new KeyNotFoundException("EMI schedule was not found.");
+        var schedule = await LoadSchedule(scheduleId, ct) ?? throw new NotFoundException("EMI schedule was not found.");
         var outstandingEmi = EmiOutstanding(schedule);
         var fees = schedule.LateFees.Where(f => f.Status == "Pending").OrderBy(f => f.PenaltyDate).ToList();
         var outstandingFees = fees.ToDictionary(f => f, f => Math.Max(0m, f.PenaltyAmount - f.PaymentAllocations.Sum(a => a.Amount)));
         var totalOutstanding = outstandingEmi + outstandingFees.Values.Sum();
-        if (request.Amount > totalOutstanding) throw new ArgumentException("Payment cannot exceed the EMI and late fee outstanding balance.");
+        if (request.Amount > totalOutstanding) throw new DomainValidationException("Payment cannot exceed the EMI and late fee outstanding balance.");
 
         var payment = new EmiPayment { EmiScheduleId = scheduleId, Amount = request.Amount, Method = request.Method.Trim(), Reference = request.Reference?.Trim() };
         var allocations = EmiPaymentAllocator.Allocate(request.Amount, outstandingEmi, fees.Select(f => new FeeBalance(f.Id, f.PenaltyDate, outstandingFees[f])));
@@ -84,19 +85,23 @@ public sealed class EmiRepaymentService(LoanDbContext db, IConfiguration configu
 
     public async Task WaiveFeeAsync(int feeId, string reason, string actor, CancellationToken ct)
     {
-        var fee = await db.EmiLateFees.SingleOrDefaultAsync(f => f.Id == feeId, ct) ?? throw new KeyNotFoundException("Late fee was not found.");
-        if (fee.Status != "Pending") throw new ArgumentException("Only an unpaid pending late fee can be waived.");
-        fee.Status = "Waived"; fee.WaivedAt = DateTimeOffset.UtcNow; fee.WaiverReason = reason.Trim(); fee.WaivedBy = actor;
+        await using var transaction = await db.Database.BeginTransactionAsync(ct);
+        var fee = await db.EmiLateFees.Include(f => f.PaymentAllocations).SingleOrDefaultAsync(f => f.Id == feeId, ct) ?? throw new NotFoundException("Late fee was not found.");
+        var outstanding = fee.PenaltyAmount - fee.PaymentAllocations.Sum(a => a.Amount);
+        if (outstanding <= 0) throw new DomainValidationException("This late fee is already fully paid.");
+        fee.Status = "Waived"; fee.WaivedAmount = outstanding; fee.WaivedAt = DateTimeOffset.UtcNow; fee.WaiverReason = reason.Trim(); fee.WaivedBy = actor;
         var schedule = await db.EmiSchedules.Include(s => s.Payments).ThenInclude(p => p.Allocations).Include(s => s.LateFees).ThenInclude(f => f.PaymentAllocations).SingleAsync(s => s.Id == fee.EmiScheduleId, ct);
         var emiOutstanding = EmiOutstanding(schedule);
         var feesOutstanding = schedule.LateFees.Where(f => f.Status == "Pending" && f.Id != fee.Id).Sum(f => Math.Max(0m, f.PenaltyAmount - f.PaymentAllocations.Sum(a => a.Amount)));
         if (emiOutstanding <= 0 && feesOutstanding <= 0) schedule.Status = "Paid";
         await db.SaveChangesAsync(ct);
+        await transaction.CommitAsync(ct);
     }
 
     public async Task ExemptScheduleAsync(int scheduleId, string reason, string actor, CancellationToken ct)
     {
-        var schedule = await db.EmiSchedules.SingleOrDefaultAsync(s => s.Id == scheduleId, ct) ?? throw new KeyNotFoundException("EMI schedule was not found.");
+        var schedule = await db.EmiSchedules.SingleOrDefaultAsync(s => s.Id == scheduleId, ct) ?? throw new NotFoundException("EMI schedule was not found.");
+        if (schedule.IsLateFeeExempt) throw new ConflictException("This EMI schedule is already exempt from late fees.");
         schedule.IsLateFeeExempt = true;
         schedule.LateFeeExemptedAt = DateTimeOffset.UtcNow;
         schedule.LateFeeExemptedBy = actor;

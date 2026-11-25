@@ -1,6 +1,7 @@
 using LMERP.Application.Contracts;
 using LMERP.Application.Services;
 using LMERP.Server.Responses;
+using LMERP.Server.Auth;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
@@ -19,7 +20,7 @@ public sealed class CustomersController(ILoanManagementService service) : Contro
     public async Task<ActionResult<BaseResponse<CustomerResponse>>> GetById(int id, CancellationToken cancellationToken) =>
         ToActionResult(await service.GetCustomerAsync(id, cancellationToken));
 
-    [Authorize(Roles = "Administrator,LoanOfficer")]
+[Authorize(Roles = Roles.LoanStaff)]
     [HttpPost]
     public async Task<ActionResult<BaseResponse<CustomerResponse>>> Create(CustomerRequest request, CancellationToken cancellationToken)
     {
@@ -28,12 +29,12 @@ public sealed class CustomersController(ILoanManagementService service) : Contro
         return StatusCode(StatusCodes.Status201Created, BaseResponse<CustomerResponse>.Succeeded(result.Value!, result.Message));
     }
 
-    [Authorize(Roles = "Administrator,LoanOfficer")]
+    [Authorize(Roles = Roles.LoanStaff)]
     [HttpPut("{id:int}")]
     public async Task<ActionResult<BaseResponse<CustomerResponse>>> Update(int id, CustomerRequest request, CancellationToken cancellationToken) =>
         ToActionResult(await service.UpdateCustomerAsync(id, request, cancellationToken));
 
-    [Authorize(Roles = "Administrator")]
+    [Authorize(Roles = Roles.Administrator)]
     [HttpDelete("{id:int}")]
     public async Task<ActionResult<BaseResponse<bool>>> Delete(int id, CancellationToken cancellationToken) =>
         ToActionResult(await service.DeleteCustomerAsync(id, cancellationToken));

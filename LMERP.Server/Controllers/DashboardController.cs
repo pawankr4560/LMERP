@@ -1,13 +1,14 @@
 using LMERP.Application.Contracts;
 using LMERP.Application.Services;
 using LMERP.Server.Responses;
+using LMERP.Server.Auth;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace LMERP.Server.Controllers;
 
 [ApiController]
-[Authorize(Roles = "Administrator,LoanOfficer,CollectionsManager,Analyst")]
+[Authorize(Roles = Roles.Administrator + "," + Roles.LoanOfficer + "," + Roles.CollectionsManager + "," + Roles.Analyst)]
 [Route("api/dashboard")]
 public sealed class DashboardController(ILoanManagementService service) : ControllerBase
 {

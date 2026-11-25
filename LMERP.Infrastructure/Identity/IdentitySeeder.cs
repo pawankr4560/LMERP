@@ -3,12 +3,13 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using LMERP.Domain;
 
 namespace LMERP.Infrastructure.Identity;
 
 public static class IdentitySeeder
 {
-    private static readonly string[] Roles = ["Administrator", "LoanOfficer", "CollectionsManager", "Analyst"];
+    private static readonly string[] Roles = [IdentityRoles.Administrator, IdentityRoles.LoanOfficer, IdentityRoles.CollectionsManager, IdentityRoles.Analyst];
 
     public static async Task SeedAsync(IServiceProvider services, IConfiguration configuration)
     {
@@ -22,7 +23,7 @@ public static class IdentitySeeder
         if (string.IsNullOrWhiteSpace(email) || string.IsNullOrWhiteSpace(password))
         {
             var environment = services.GetRequiredService<IHostEnvironment>();
-            if (!environment.IsDevelopment() && !(await users.GetUsersInRoleAsync("Administrator")).Any())
+            if (!environment.IsDevelopment() && !(await users.GetUsersInRoleAsync(IdentityRoles.Administrator)).Any())
             {
                 var logger = services.GetRequiredService<ILoggerFactory>().CreateLogger(nameof(IdentitySeeder));
                 logger.LogWarning("No Administrator user exists. Configure BootstrapAdmin:Email and BootstrapAdmin:Password using a secret store to create one.");
@@ -37,6 +38,6 @@ public static class IdentitySeeder
             if (!result.Succeeded)
                 throw new InvalidOperationException($"Could not create the configured bootstrap administrator: {string.Join("; ", result.Errors.Select(error => error.Description))}");
         }
-        if (!await users.IsInRoleAsync(user, "Administrator")) await users.AddToRoleAsync(user, "Administrator");
+        if (!await users.IsInRoleAsync(user, IdentityRoles.Administrator)) await users.AddToRoleAsync(user, IdentityRoles.Administrator);
     }
 }

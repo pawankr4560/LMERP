@@ -1,6 +1,7 @@
 using LMERP.Application.Contracts;
 using LMERP.Application.Services;
 using LMERP.Server.Responses;
+using LMERP.Server.Auth;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
@@ -19,12 +20,12 @@ public sealed class LoansController(ILoanManagementService service) : Controller
     public async Task<ActionResult<BaseResponse<LoanResponse>>> GetById(int id, CancellationToken cancellationToken) =>
         ToActionResult(await service.GetLoanAsync(id, cancellationToken));
 
-    [Authorize(Roles = "Administrator,LoanOfficer")]
+    [Authorize(Roles = Roles.LoanStaff)]
     [HttpGet("{id:int}/emi-schedule")]
     public async Task<ActionResult<BaseResponse<IReadOnlyList<EmiScheduleResponse>>>> GetEmiSchedule(int id, CancellationToken cancellationToken) =>
         ToActionResult(await service.GetEmiScheduleAsync(id, cancellationToken));
 
-    [Authorize(Roles = "Administrator,LoanOfficer")]
+    [Authorize(Roles = Roles.LoanStaff)]
     [HttpPost]
     public async Task<ActionResult<BaseResponse<LoanResponse>>> Create(LoanRequest request, CancellationToken cancellationToken)
     {
@@ -33,12 +34,12 @@ public sealed class LoansController(ILoanManagementService service) : Controller
         return StatusCode(StatusCodes.Status201Created, BaseResponse<LoanResponse>.Succeeded(result.Value!, result.Message));
     }
 
-    [Authorize(Roles = "Administrator,LoanOfficer")]
+    [Authorize(Roles = Roles.LoanStaff)]
     [HttpPut("{id:int}")]
     public async Task<ActionResult<BaseResponse<LoanResponse>>> Update(int id, LoanUpdateRequest request, CancellationToken cancellationToken) =>
         ToActionResult(await service.UpdateLoanAsync(id, request, cancellationToken));
 
-    [Authorize(Roles = "Administrator,LoanOfficer")]
+    [Authorize(Roles = Roles.LoanStaff)]
     [HttpDelete("{id:int}")]
     public async Task<ActionResult<BaseResponse<bool>>> Delete(int id, CancellationToken cancellationToken)
     {

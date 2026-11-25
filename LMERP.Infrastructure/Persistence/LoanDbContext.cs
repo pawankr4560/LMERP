@@ -81,6 +81,7 @@ public sealed class LoanDbContext(DbContextOptions<LoanDbContext> options) : Ide
             entity.Property(fee => fee.BaseAmount).HasPrecision(18, 2);
             entity.Property(fee => fee.PenaltyRate).HasPrecision(5, 2);
             entity.Property(fee => fee.PenaltyAmount).HasPrecision(18, 2);
+            entity.Property(fee => fee.WaivedAmount).HasPrecision(18, 2);
             entity.Property(fee => fee.Status).HasMaxLength(16).IsRequired();
             entity.Property(fee => fee.WaiverReason).HasMaxLength(500);
             entity.Property(fee => fee.WaivedBy).HasMaxLength(256);

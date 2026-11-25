@@ -88,6 +88,10 @@ namespace LMERP.Infrastructure.Persistence.Migrations
                         .HasPrecision(18, 2)
                         .HasColumnType("decimal(18,2)");
 
+                    b.Property<decimal?>("WaivedAmount")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("decimal(18,2)");
+
                     b.Property<DateOnly>("PenaltyDate")
                         .HasColumnType("date");
 
