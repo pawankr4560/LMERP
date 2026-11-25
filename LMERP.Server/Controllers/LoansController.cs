@@ -20,12 +20,31 @@ public sealed class LoansController(ILoanManagementService service) : Controller
         ToActionResult(await service.GetLoanAsync(id, cancellationToken));
 
     [Authorize(Roles = "Administrator,LoanOfficer")]
+    [HttpGet("{id:int}/emi-schedule")]
+    public async Task<ActionResult<BaseResponse<IReadOnlyList<EmiScheduleResponse>>>> GetEmiSchedule(int id, CancellationToken cancellationToken) =>
+        ToActionResult(await service.GetEmiScheduleAsync(id, cancellationToken));
+
+    [Authorize(Roles = "Administrator,LoanOfficer")]
     [HttpPost]
     public async Task<ActionResult<BaseResponse<LoanResponse>>> Create(LoanRequest request, CancellationToken cancellationToken)
     {
         var result = await service.CreateLoanAsync(request, cancellationToken);
         if (result.Status != OperationStatus.Success) return ToActionResult(result);
         return StatusCode(StatusCodes.Status201Created, BaseResponse<LoanResponse>.Succeeded(result.Value!, result.Message));
+    }
+
+    [Authorize(Roles = "Administrator,LoanOfficer")]
+    [HttpPut("{id:int}")]
+    public async Task<ActionResult<BaseResponse<LoanResponse>>> Update(int id, LoanUpdateRequest request, CancellationToken cancellationToken) =>
+        ToActionResult(await service.UpdateLoanAsync(id, request, cancellationToken));
+
+    [Authorize(Roles = "Administrator,LoanOfficer")]
+    [HttpDelete("{id:int}")]
+    public async Task<ActionResult<BaseResponse<bool>>> Delete(int id, CancellationToken cancellationToken)
+    {
+        var result = await service.DeleteLoanAsync(id, cancellationToken);
+        if (result.Status != OperationStatus.Success) return ToActionResult(result);
+        return Ok(BaseResponse<bool>.Succeeded(result.Value, result.Message));
     }
 
     private ActionResult<BaseResponse<T>> ToActionResult<T>(OperationResult<T> result) => result.Status switch

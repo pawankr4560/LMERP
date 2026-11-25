@@ -63,7 +63,215 @@ namespace LMERP.Infrastructure.Persistence.Migrations
                     b.HasIndex("Phone")
                         .IsUnique();
 
-                    b.ToTable("Customers", (string)null);
+                    b.ToTable("Customers");
+                });
+
+            modelBuilder.Entity("LMERP.Domain.Entities.EmiLateFee", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<decimal>("BaseAmount")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<int>("EmiScheduleId")
+                        .HasColumnType("int");
+
+                    b.Property<decimal>("PenaltyAmount")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<DateOnly>("PenaltyDate")
+                        .HasColumnType("date");
+
+                    b.Property<decimal>("PenaltyRate")
+                        .HasPrecision(5, 2)
+                        .HasColumnType("decimal(5,2)");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("nvarchar(16)");
+
+                    b.Property<DateTimeOffset?>("WaivedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("WaivedBy")
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<string>("WaiverReason")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("EmiScheduleId", "PenaltyDate")
+                        .IsUnique();
+
+                    b.ToTable("EmiLateFees");
+                });
+
+            modelBuilder.Entity("LMERP.Domain.Entities.EmiPayment", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<decimal>("Amount")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<int>("EmiScheduleId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Method")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
+                    b.Property<DateTimeOffset>("ReceivedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("Reference")
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("EmiScheduleId");
+
+                    b.HasIndex("ReceivedAt");
+
+                    b.ToTable("EmiPayments");
+                });
+
+            modelBuilder.Entity("LMERP.Domain.Entities.EmiPaymentAllocation", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<decimal>("Amount")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<string>("Component")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("nvarchar(16)");
+
+                    b.Property<int?>("EmiLateFeeId")
+                        .HasColumnType("int");
+
+                    b.Property<int>("EmiPaymentId")
+                        .HasColumnType("int");
+
+                    b.Property<int>("EmiScheduleId")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("EmiLateFeeId");
+
+                    b.HasIndex("EmiPaymentId");
+
+                    b.HasIndex("EmiScheduleId");
+
+                    b.ToTable("EmiPaymentAllocations");
+                });
+
+            modelBuilder.Entity("LMERP.Domain.Entities.EmiSchedule", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<DateTimeOffset>("DueDate")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<decimal>("EmiAmount")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<int>("GracePeriodDays")
+                        .HasColumnType("int");
+
+                    b.Property<int>("InstallmentNumber")
+                        .HasColumnType("int");
+
+                    b.Property<decimal>("InterestAmount")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<bool>("IsLateFeeApplicable")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("IsLateFeeExempt")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("LateFeeCalculationType")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("nvarchar(40)");
+
+                    b.Property<DateTimeOffset?>("LateFeeExemptedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("LateFeeExemptedBy")
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<string>("LateFeeExemptionReason")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<decimal>("LateFeeRate")
+                        .HasPrecision(5, 2)
+                        .HasColumnType("decimal(5,2)");
+
+                    b.Property<int>("LoanApplicationId")
+                        .HasColumnType("int");
+
+                    b.Property<decimal?>("MaximumLateFeeAmount")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<int?>("MaximumPenaltyDays")
+                        .HasColumnType("int");
+
+                    b.Property<decimal>("PrincipalAmount")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<decimal>("RemainingBalance")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(24)
+                        .HasColumnType("nvarchar(24)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("LoanApplicationId", "InstallmentNumber")
+                        .IsUnique();
+
+                    b.ToTable("EmiSchedules");
                 });
 
             modelBuilder.Entity("LMERP.Domain.Entities.LoanApplication", b =>
@@ -84,6 +292,25 @@ namespace LMERP.Infrastructure.Persistence.Migrations
 
                     b.Property<int>("CustomerId")
                         .HasColumnType("int");
+
+                    b.Property<DateTimeOffset?>("DeletedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<decimal>("InterestRate")
+                        .ValueGeneratedOnAdd()
+                        .HasPrecision(5, 2)
+                        .HasColumnType("decimal(5,2)")
+                        .HasDefaultValue(0m);
+
+                    b.Property<bool>("IsDeleted")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bit")
+                        .HasDefaultValue(false);
+
+                    b.Property<bool>("IsFlatInterest")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bit")
+                        .HasDefaultValue(true);
 
                     b.Property<string>("Product")
                         .IsRequired()
@@ -109,7 +336,53 @@ namespace LMERP.Infrastructure.Persistence.Migrations
 
                     b.HasIndex("CustomerId");
 
-                    b.ToTable("LoanApplications", (string)null);
+                    b.ToTable("LoanApplications");
+                });
+
+            modelBuilder.Entity("LMERP.Domain.Entities.LoanProduct", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<int>("GracePeriodDays")
+                        .HasColumnType("int");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("IsLateFeeApplicable")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("LateFeeCalculationType")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("nvarchar(40)");
+
+                    b.Property<decimal>("LateFeeRate")
+                        .HasPrecision(5, 2)
+                        .HasColumnType("decimal(5,2)");
+
+                    b.Property<decimal?>("MaximumLateFeeAmount")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<int?>("MaximumPenaltyDays")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(80)
+                        .HasColumnType("nvarchar(80)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Name")
+                        .IsUnique();
+
+                    b.ToTable("LoanProducts");
                 });
 
             modelBuilder.Entity("LMERP.Infrastructure.Identity.LoanUser", b =>
@@ -320,6 +593,65 @@ namespace LMERP.Infrastructure.Persistence.Migrations
                     b.ToTable("AspNetUserTokens", (string)null);
                 });
 
+            modelBuilder.Entity("LMERP.Domain.Entities.EmiLateFee", b =>
+                {
+                    b.HasOne("LMERP.Domain.Entities.EmiSchedule", "EmiSchedule")
+                        .WithMany("LateFees")
+                        .HasForeignKey("EmiScheduleId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("EmiSchedule");
+                });
+
+            modelBuilder.Entity("LMERP.Domain.Entities.EmiPayment", b =>
+                {
+                    b.HasOne("LMERP.Domain.Entities.EmiSchedule", "EmiSchedule")
+                        .WithMany("Payments")
+                        .HasForeignKey("EmiScheduleId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("EmiSchedule");
+                });
+
+            modelBuilder.Entity("LMERP.Domain.Entities.EmiPaymentAllocation", b =>
+                {
+                    b.HasOne("LMERP.Domain.Entities.EmiLateFee", "EmiLateFee")
+                        .WithMany("PaymentAllocations")
+                        .HasForeignKey("EmiLateFeeId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("LMERP.Domain.Entities.EmiPayment", "EmiPayment")
+                        .WithMany("Allocations")
+                        .HasForeignKey("EmiPaymentId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("LMERP.Domain.Entities.EmiSchedule", "EmiSchedule")
+                        .WithMany()
+                        .HasForeignKey("EmiScheduleId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("EmiLateFee");
+
+                    b.Navigation("EmiPayment");
+
+                    b.Navigation("EmiSchedule");
+                });
+
+            modelBuilder.Entity("LMERP.Domain.Entities.EmiSchedule", b =>
+                {
+                    b.HasOne("LMERP.Domain.Entities.LoanApplication", "LoanApplication")
+                        .WithMany("EmiSchedules")
+                        .HasForeignKey("LoanApplicationId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("LoanApplication");
+                });
+
             modelBuilder.Entity("LMERP.Domain.Entities.LoanApplication", b =>
                 {
                     b.HasOne("LMERP.Domain.Entities.Customer", "Customer")
@@ -385,6 +717,28 @@ namespace LMERP.Infrastructure.Persistence.Migrations
             modelBuilder.Entity("LMERP.Domain.Entities.Customer", b =>
                 {
                     b.Navigation("LoanApplications");
+                });
+
+            modelBuilder.Entity("LMERP.Domain.Entities.EmiLateFee", b =>
+                {
+                    b.Navigation("PaymentAllocations");
+                });
+
+            modelBuilder.Entity("LMERP.Domain.Entities.EmiPayment", b =>
+                {
+                    b.Navigation("Allocations");
+                });
+
+            modelBuilder.Entity("LMERP.Domain.Entities.EmiSchedule", b =>
+                {
+                    b.Navigation("LateFees");
+
+                    b.Navigation("Payments");
+                });
+
+            modelBuilder.Entity("LMERP.Domain.Entities.LoanApplication", b =>
+                {
+                    b.Navigation("EmiSchedules");
                 });
 #pragma warning restore 612, 618
         }

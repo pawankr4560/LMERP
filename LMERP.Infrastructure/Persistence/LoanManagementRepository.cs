@@ -17,7 +17,7 @@ public sealed class LoanManagementRepository(LoanDbContext db) : ILoanManagement
         db.Customers.AnyAsync(customer => customer.Phone == phone && (!excludingId.HasValue || customer.Id != excludingId.Value), cancellationToken);
 
     public Task<bool> CustomerHasLoansAsync(int id, CancellationToken cancellationToken) =>
-        db.LoanApplications.AnyAsync(loan => loan.CustomerId == id, cancellationToken);
+        db.LoanApplications.IgnoreQueryFilters().AnyAsync(loan => loan.CustomerId == id, cancellationToken);
 
     public async Task AddCustomerAsync(Customer customer, CancellationToken cancellationToken)
     {
@@ -39,6 +39,9 @@ public sealed class LoanManagementRepository(LoanDbContext db) : ILoanManagement
     public Task<LoanApplication?> GetLoanAsync(int id, CancellationToken cancellationToken) =>
         db.LoanApplications.AsNoTracking().Include(loan => loan.Customer).SingleOrDefaultAsync(loan => loan.Id == id, cancellationToken);
 
+    public Task<LoanApplication?> GetLoanForUpdateAsync(int id, CancellationToken cancellationToken) =>
+        db.LoanApplications.Include(loan => loan.Customer).SingleOrDefaultAsync(loan => loan.Id == id, cancellationToken);
+
     public Task<Customer?> GetActiveCustomerAsync(int id, CancellationToken cancellationToken) =>
         db.Customers.SingleOrDefaultAsync(customer => customer.Id == id && customer.Status == "Active", cancellationToken);
 
@@ -47,6 +50,34 @@ public sealed class LoanManagementRepository(LoanDbContext db) : ILoanManagement
         db.LoanApplications.Add(loan);
         await db.SaveChangesAsync(cancellationToken);
     }
+
+    public async Task UpdateLoanAsync(LoanApplication loan, CancellationToken cancellationToken) =>
+        await db.SaveChangesAsync(cancellationToken);
+
+    public async Task UpdateLoanAndAddEmiScheduleAsync(LoanApplication loan, IReadOnlyCollection<EmiSchedule> schedule, CancellationToken cancellationToken)
+    {
+        db.EmiSchedules.AddRange(schedule);
+        await db.SaveChangesAsync(cancellationToken);
+    }
+
+    public async Task SoftDeleteLoanAsync(LoanApplication loan, CancellationToken cancellationToken)
+    {
+        loan.IsDeleted = true;
+        loan.DeletedAtUtc = DateTimeOffset.UtcNow;
+        await db.SaveChangesAsync(cancellationToken);
+    }
+
+    public Task<bool> HasEmiScheduleAsync(int loanId, CancellationToken cancellationToken) =>
+        db.EmiSchedules.AnyAsync(schedule => schedule.LoanApplicationId == loanId, cancellationToken);
+
+    public Task<LoanProduct?> GetLoanProductAsync(string name, CancellationToken cancellationToken) =>
+        db.LoanProducts.SingleOrDefaultAsync(product => product.Name == name && product.IsActive, cancellationToken);
+
+    public async Task<IReadOnlyList<EmiSchedule>> GetEmiScheduleAsync(int loanId, CancellationToken cancellationToken) =>
+        await db.EmiSchedules.AsNoTracking()
+            .Where(schedule => schedule.LoanApplicationId == loanId)
+            .OrderBy(schedule => schedule.InstallmentNumber)
+            .ToListAsync(cancellationToken);
 
     public async Task<DashboardSummary> GetDashboardSummaryAsync(CancellationToken cancellationToken)
     {

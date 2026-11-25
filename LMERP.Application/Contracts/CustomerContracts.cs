@@ -13,7 +13,9 @@ public sealed class CustomerRequest
     [Required, RegularExpression("^(Active|Inactive|Review)$")] public string Status { get; init; } = "Active";
 }
 
-public sealed record LoanResponse(int Id, string ApplicationNumber, int CustomerId, string CustomerName, string Product, decimal RequestedAmount, int TenureMonths, string Status, DateTimeOffset AppliedAt);
+public sealed record LoanResponse(int Id, string ApplicationNumber, int CustomerId, string CustomerName, string Product, decimal RequestedAmount, int TenureMonths, decimal InterestRate, bool IsFlatInterest, string Status, DateTimeOffset AppliedAt);
+
+public sealed record EmiScheduleResponse(int Id, int LoanApplicationId, int InstallmentNumber, DateTimeOffset DueDate, decimal PrincipalAmount, decimal InterestAmount, decimal EmiAmount, decimal RemainingBalance, string Status);
 
 public sealed class LoanRequest
 {
@@ -21,6 +23,19 @@ public sealed class LoanRequest
     [Required, StringLength(80)] public string Product { get; init; } = string.Empty;
     [Range(1, 100000000)] public decimal RequestedAmount { get; init; }
     [Range(1, 360)] public int TenureMonths { get; init; }
+    [Range(typeof(decimal), "0.01", "100.00")] public decimal InterestRate { get; init; }
+    public bool IsFlatInterest { get; init; } = true;
+}
+
+public sealed class LoanUpdateRequest
+{
+    [Required, StringLength(80)] public string Product { get; init; } = string.Empty;
+    [Range(1, 100000000)] public decimal RequestedAmount { get; init; }
+    [Range(1, 360)] public int TenureMonths { get; init; }
+    [Range(typeof(decimal), "0.01", "100.00")] public decimal InterestRate { get; init; }
+    public bool IsFlatInterest { get; init; } = true;
+    [Required, RegularExpression("^(Under review|Documents needed|Approved)$")]
+    public string Status { get; init; } = string.Empty;
 }
 
 public sealed record DashboardSummary(int CustomerCount, int TotalLoans, int ActiveLoans, int PendingApplications, decimal TotalDisbursed, decimal OutstandingAmount, int OverdueLoans);

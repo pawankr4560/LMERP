@@ -12,5 +12,8 @@ public interface ILoanManagementService
     Task<IReadOnlyList<LoanResponse>> GetLoansAsync(CancellationToken cancellationToken);
     Task<OperationResult<LoanResponse>> GetLoanAsync(int id, CancellationToken cancellationToken);
     Task<OperationResult<LoanResponse>> CreateLoanAsync(LoanRequest request, CancellationToken cancellationToken);
+    Task<OperationResult<LoanResponse>> UpdateLoanAsync(int id, LoanUpdateRequest request, CancellationToken cancellationToken);
+    Task<OperationResult<bool>> DeleteLoanAsync(int id, CancellationToken cancellationToken);
+    Task<OperationResult<IReadOnlyList<EmiScheduleResponse>>> GetEmiScheduleAsync(int id, CancellationToken cancellationToken);
     Task<DashboardSummary> GetDashboardSummaryAsync(CancellationToken cancellationToken);
 }
