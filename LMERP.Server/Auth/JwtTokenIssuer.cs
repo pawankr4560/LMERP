@@ -11,13 +11,14 @@ public sealed class JwtTokenIssuer(IConfiguration configuration, UserManager<Loa
 {
     public async Task<(string Token, DateTime ExpiresAt)> IssueAsync(LoanUser user)
     {
-        var expiresAt = DateTime.UtcNow.AddHours(8);
+        var expiresAt = DateTime.UtcNow.AddMinutes(configuration.GetValue("Jwt:AccessTokenMinutes", 60));
         var claims = new List<Claim>
         {
             new(JwtRegisteredClaimNames.Sub, user.Id.ToString()),
             new(JwtRegisteredClaimNames.Email, user.Email ?? user.UserName ?? string.Empty),
             new(ClaimTypes.Name, user.FullName),
-            new(ClaimTypes.NameIdentifier, user.Id.ToString())
+            new(ClaimTypes.NameIdentifier, user.Id.ToString()),
+            new("sstamp", user.SecurityStamp ?? string.Empty)
         };
         claims.AddRange((await userManager.GetRolesAsync(user)).Select(role => new Claim(ClaimTypes.Role, role)));
         var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(configuration["Jwt:SigningKey"]!));

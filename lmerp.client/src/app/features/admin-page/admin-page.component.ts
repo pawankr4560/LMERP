@@ -4,6 +4,7 @@ import { FormControl, FormRecord, ReactiveFormsModule, Validators } from '@angul
 import { ActivatedRoute } from '@angular/router';
 import { catchError, of } from 'rxjs';
 import { CustomerDto, LoanApiService, LoanDto, LoanStatus } from '../../core/api/loan-api.service';
+import { AuthService } from '../../core/auth/auth.service';
 
 interface PageRow { [key: string]: string; }
 interface PageDefinition { title: string; description: string; action: string; columns: { key: string; label: string }[]; rows: PageRow[]; fields: { key: string; label: string; type?: string; options?: string[] }[]; }
@@ -104,6 +105,7 @@ export class AdminPageComponent {
   readonly attentionCount = computed(() => this.rows().filter(row => ['Under review','Overdue','Documents needed','Pending','Invited'].includes(row['status'])).length);
   form = new FormRecord<FormControl<string>>({});
   private readonly api = inject(LoanApiService);
+  private readonly auth = inject(AuthService);
 
   constructor() {
     this.route.data.subscribe(data => {
@@ -119,6 +121,7 @@ export class AdminPageComponent {
   }
 
   cell(row: PageRow, key: string): string { return row[key] ?? '—'; }
+  canMutate(): boolean { return this.auth.hasRole('Administrator', 'LoanOfficer'); }
   setQuery(value: string): void { this.query.set(value); this.pageIndex.set(0); }
   setStatusFilter(value: string): void { this.statusFilter.set(value); this.pageIndex.set(0); }
   sortBy(key: string): void {

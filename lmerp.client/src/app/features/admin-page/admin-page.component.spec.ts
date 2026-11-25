@@ -2,6 +2,7 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { ActivatedRoute } from '@angular/router';
 import { of, throwError } from 'rxjs';
 import { LoanApiService } from '../../core/api/loan-api.service';
+import { AuthService } from '../../core/auth/auth.service';
 import { AdminPageComponent } from './admin-page.component';
 
 describe('AdminPageComponent API failures', () => {
@@ -16,7 +17,8 @@ describe('AdminPageComponent API failures', () => {
       imports: [AdminPageComponent],
       providers: [
         { provide: ActivatedRoute, useValue: { data: of({ section: 'customers' }) } },
-        { provide: LoanApiService, useValue: api }
+        { provide: LoanApiService, useValue: api },
+        { provide: AuthService, useValue: { hasRole: () => true } }
       ]
     }).compileComponents();
     fixture = TestBed.createComponent(AdminPageComponent);

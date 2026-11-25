@@ -4,10 +4,18 @@ import { AuthService } from './auth.service';
 
 export const authGuard: CanActivateFn = () => {
   const auth = inject(AuthService);
-  return auth.isAuthenticated() || inject(Router).createUrlTree(['/login']);
+  return (auth.accessToken() !== null && auth.isAuthenticated()) || inject(Router).createUrlTree(['/login']);
 };
 
 export const guestGuard: CanActivateFn = () => {
   const auth = inject(AuthService);
   return auth.isAuthenticated() ? inject(Router).createUrlTree(['/dashboard']) : true;
+};
+
+export const roleGuard: CanActivateFn = (route) => {
+  const auth = inject(AuthService);
+  const roles = route.data['roles'] as string[] | undefined;
+  return auth.isAuthenticated() && (!roles?.length || auth.hasRole(...roles))
+    ? true
+    : inject(Router).createUrlTree([auth.isAuthenticated() ? '/dashboard' : '/login']);
 };

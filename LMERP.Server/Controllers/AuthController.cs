@@ -3,6 +3,7 @@ using LMERP.Server.Responses;
 using LMERP.Infrastructure.Identity;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 
 namespace LMERP.Server.Controllers;
 
@@ -11,6 +12,7 @@ namespace LMERP.Server.Controllers;
 public sealed class AuthController(UserManager<LoanUser> users, SignInManager<LoanUser> signIn, JwtTokenIssuer tokens) : ControllerBase
 {
     [HttpPost("login")]
+    [EnableRateLimiting("login")]
     public async Task<ActionResult<BaseResponse<LoginResponse>>> Login(LoginRequest request)
     {
         var user = await users.FindByEmailAsync(request.Email.Trim());

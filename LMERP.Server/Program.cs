@@ -6,6 +6,9 @@ using LMERP.Infrastructure.Identity;
 using LMERP.Infrastructure.Persistence;
 using LMERP.Server.Middleware;
 using LMERP.Server.Responses;
+using LMERP.Server.Extensions;
+using System.Security.Claims;
+using System.IdentityModel.Tokens.Jwt;
 using System.Security.Cryptography;
 using System.Text;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
@@ -13,6 +16,8 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
+using System.Threading.RateLimiting;
+using Microsoft.OpenApi.Models;
 
 namespace LMERP.Server
 {
@@ -60,6 +65,16 @@ namespace LMERP.Server
                 };
                 options.Events = new JwtBearerEvents
                 {
+                    OnTokenValidated = async context =>
+                    {
+                        var userId = context.Principal?.FindFirstValue(ClaimTypes.NameIdentifier)
+                            ?? context.Principal?.FindFirstValue(JwtRegisteredClaimNames.Sub);
+                        var stamp = context.Principal?.FindFirstValue("sstamp");
+                        if (!int.TryParse(userId, out var id) || string.IsNullOrEmpty(stamp)) { context.Fail("The token is invalid."); return; }
+                        var manager = context.HttpContext.RequestServices.GetRequiredService<UserManager<LoanUser>>();
+                        var user = await manager.FindByIdAsync(id.ToString());
+                        if (user is null || !user.IsActive || !string.Equals(stamp, user.SecurityStamp, StringComparison.Ordinal)) context.Fail("The token has been revoked.");
+                    },
                     OnChallenge = async context =>
                     {
                         context.HandleResponse();
@@ -75,6 +90,22 @@ namespace LMERP.Server
                     }
                 };
             });
+            var loginPermitLimit = builder.Configuration.GetValue("RateLimiting:Login:PermitLimit", 5);
+            var loginWindowSeconds = builder.Configuration.GetValue("RateLimiting:Login:WindowSeconds", 60);
+            builder.Services.AddRateLimiter(options =>
+            {
+                options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+                options.AddPolicy("login", context => RateLimitPartition.GetFixedWindowLimiter(
+                    context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+                    _ => new FixedWindowRateLimiterOptions { PermitLimit = loginPermitLimit, Window = TimeSpan.FromSeconds(loginWindowSeconds), QueueLimit = 0, AutoReplenishment = true }));
+                options.OnRejected = async (context, token) =>
+                {
+                    context.HttpContext.Response.ContentType = "application/json";
+                    if (context.Lease.TryGetMetadata(MetadataName.RetryAfter, out var retryAfter))
+                        context.HttpContext.Response.Headers.RetryAfter = Math.Ceiling(retryAfter.TotalSeconds).ToString(System.Globalization.CultureInfo.InvariantCulture);
+                    await context.HttpContext.Response.WriteAsJsonAsync(BaseResponse<object>.Failed("Too many sign-in attempts. Try again later."), token);
+                };
+            });
             builder.Services.AddAuthorization();
             builder.Services.AddControllers().ConfigureApiBehaviorOptions(options =>
             {
@@ -86,7 +117,11 @@ namespace LMERP.Server
                 };
             });
             builder.Services.AddEndpointsApiExplorer();
-            builder.Services.AddSwaggerGen();
+            builder.Services.AddSwaggerGen(options =>
+            {
+                options.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme { Name = "Authorization", Type = SecuritySchemeType.Http, Scheme = "bearer", BearerFormat = "JWT", In = ParameterLocation.Header, Description = "Enter a JWT bearer token." });
+                options.AddSecurityRequirement(new OpenApiSecurityRequirement { [new OpenApiSecurityScheme { Reference = new OpenApiReference { Type = ReferenceType.SecurityScheme, Id = "Bearer" } }] = Array.Empty<string>() });
+            });
 
             var app = builder.Build();
 
@@ -99,6 +134,11 @@ namespace LMERP.Server
             }
 
             app.UseMiddleware<ApiExceptionMiddleware>();
+            if (!app.Environment.IsDevelopment()) app.UseHsts();
+            app.UseSecurityHeaders();
+            app.UseRouting();
+            // Configure forwarded headers before rate limiting when deployed behind a reverse proxy, so the real client IP is partitioned.
+            app.UseRateLimiter();
             app.UseDefaultFiles();
             app.UseStaticFiles();
 
