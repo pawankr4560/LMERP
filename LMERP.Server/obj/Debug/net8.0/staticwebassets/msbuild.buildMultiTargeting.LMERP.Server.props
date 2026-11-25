@@ -1,3 +1,0 @@
-﻿<Project>
-  <Import Project="..\build\LMERP.Server.props" />
-</Project>

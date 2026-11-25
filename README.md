@@ -33,16 +33,23 @@ Validation, authorization, not-found, conflict, and exception responses use the 
 
 ## Configure local access
 
-The default connection string uses SQL Server LocalDB. You can override it with `ConnectionStrings:LoanDb` in user secrets or the `ConnectionStrings__LoanDb` environment variable.
+The repository contains no bootstrap credentials or machine-specific database connection strings. Configure local access outside tracked files with user secrets or environment variables.
+
+Set the LocalDB connection string and a JWT signing key using user secrets (the signing key shown here is generated locally):
+
+```powershell
+dotnet user-secrets set "ConnectionStrings:LoanDb" "Server=(localdb)\MSSQLLocalDB;Database=NorthstarLending;Trusted_Connection=True;MultipleActiveResultSets=true;TrustServerCertificate=True" --project .\LMERP.Server\LMERP.Server.csproj
+dotnet user-secrets set "Jwt:SigningKey" ([Convert]::ToBase64String([Security.Cryptography.RandomNumberGenerator]::GetBytes(48))) --project .\LMERP.Server\LMERP.Server.csproj
+```
 
 Create an administrator using local user secrets (replace the example values):
 
 ```powershell
 dotnet user-secrets set "BootstrapAdmin:Email" "admin@example.com" --project .\LMERP.Server\LMERP.Server.csproj
-dotnet user-secrets set "BootstrapAdmin:Password" "Choose-A-Long-Unique-Password!42" --project .\LMERP.Server\LMERP.Server.csproj
+dotnet user-secrets set "BootstrapAdmin:Password" "<a-new-unique-password>" --project .\LMERP.Server\LMERP.Server.csproj
 ```
 
-The password must be at least 12 characters and include upper and lower case letters, a number, and a symbol. User secrets stay outside the repository. In Development, the server generates an ephemeral JWT signing key if one is not configured. For production, configure a stable secret of at least 32 bytes with `Jwt:SigningKey` in a secret store, configure `ConnectionStrings:LoanDb`, and use EF Core migrations for schema changes before deployment.
+The password must be at least 12 characters and include upper and lower case letters, a number, and a symbol. User secrets stay outside the repository. In Development, the server generates an ephemeral JWT signing key if one is not configured. Environment variable names use double underscores, for example `ConnectionStrings__LoanDb`, `Jwt__SigningKey`, `BootstrapAdmin__Email`, and `BootstrapAdmin__Password`. For production, configure a stable signing key and database connection in a secret store and supply bootstrap admin values only when an initial administrator needs to be created.
 
 ## Run
 
@@ -74,4 +81,4 @@ The headless launcher disables GPU acceleration for environments where Chrome ca
 - `GET|POST /api/loans`
 - `GET /api/loans/{id}`
 
-The initial database setup uses `EnsureCreated` to make a fresh local database. It is intended for this starter's first schema only; use EF Core migrations before evolving or deploying an existing database.
+The server applies pending EF Core migrations at startup with `Database.MigrateAsync()`. Create new schema changes as migrations and review/apply them before deploying to production.

@@ -28,7 +28,9 @@ yarn-error.log*
 **/bin/
 **/obj/
 .vs/
+**/.vs/
 *.user
+*.csproj.user
 *.suo
 
 # Node and Angular output
