@@ -131,6 +131,7 @@ namespace LMERP.Server
             {
                 var db = scope.ServiceProvider.GetRequiredService<LoanDbContext>();
                 await db.Database.MigrateAsync();
+                await LoanProductSeeder.SeedAsync(db);
                 if (app.Environment.IsDevelopment()) await LoanDbContext.SeedAsync(db);
                 await IdentitySeeder.SeedAsync(scope.ServiceProvider, builder.Configuration);
             }

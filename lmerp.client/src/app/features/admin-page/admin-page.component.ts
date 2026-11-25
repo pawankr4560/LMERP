@@ -81,6 +81,7 @@ export class AdminPageComponent {
   readonly toast = signal('');
   readonly editingId = signal<number | null>(null);
   readonly loanCustomerOptions = signal<{ value: string; label: string }[]>([]);
+  readonly loanProductOptions = signal(['Personal loan', 'Business loan', 'Vehicle loan', 'Home loan']);
   readonly previewMode = signal(true);
   readonly statusFilter = signal('All statuses');
   readonly sortKey = signal('');
@@ -248,6 +249,9 @@ export class AdminPageComponent {
         if (customers) { this.rows.set(customers.map(customer => this.customerRow(customer))); this.previewMode.set(false); }
       });
     } else if (this.section() === 'loans') {
+      this.api.products().pipe(catchError(error => { this.notify(this.errorMessage(error)); return of(null); })).subscribe(products => {
+        if (products) this.loanProductOptions.set(products.filter(product => product.isActive).map(product => product.name));
+      });
       this.api.customers().pipe(catchError(error => { this.notify(this.errorMessage(error)); return of([]); })).subscribe(customers => this.loanCustomerOptions.set(customers.filter(customer => customer.status === 'Active').map(customer => ({ value: String(customer.id), label: customer.fullName }))));
       this.api.loans().pipe(catchError(error => { this.notify(this.errorMessage(error)); return of(null); })).subscribe(loans => {
         if (loans) { this.rows.set(loans.map(loan => this.loanRow(loan))); this.previewMode.set(false); }

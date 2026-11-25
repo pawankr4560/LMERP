@@ -59,6 +59,23 @@ public sealed class LoanManagementServiceTests
         Assert.Equal($"LN-{DateTime.UtcNow:yyyy}-001000", result.Value!.ApplicationNumber);
     }
 
+    [Fact]
+    public async Task CreateLoanAsync_UnknownProduct_ReturnsBadRequest()
+    {
+        var repository = new FakeLoanManagementRepository { ActiveCustomer = new Customer { Id = 3 }, ActiveProducts = [] };
+        var result = await new LoanManagementService(repository).CreateLoanAsync(new LoanRequest { CustomerId = 3, Product = "Mystery loan", RequestedAmount = 10000, TenureMonths = 12, InterestRate = 12 }, CancellationToken.None);
+        Assert.Equal(OperationStatus.BadRequest, result.Status);
+        Assert.Equal("Select an active loan product.", result.Message);
+    }
+
+    [Fact]
+    public async Task CreateLoanAsync_InactiveProduct_ReturnsBadRequest()
+    {
+        var repository = new FakeLoanManagementRepository { ActiveCustomer = new Customer { Id = 3 }, ActiveProducts = [] };
+        var result = await new LoanManagementService(repository).CreateLoanAsync(new LoanRequest { CustomerId = 3, Product = "Personal loan", RequestedAmount = 10000, TenureMonths = 12, InterestRate = 12 }, CancellationToken.None);
+        Assert.Equal(OperationStatus.BadRequest, result.Status);
+    }
+
     private sealed class FakeLoanManagementRepository : ILoanManagementRepository
     {
         public LoanApplication? Loan { get; init; }
@@ -67,6 +84,7 @@ public sealed class LoanManagementServiceTests
         public bool SoftDeleteCalled { get; private set; }
         public Customer? ActiveCustomer { get; init; }
         public long NextNumber { get; init; } = 1000;
+        public HashSet<string> ActiveProducts { get; init; } = ["Personal loan"];
 
         public Task<LoanApplication?> GetLoanForUpdateAsync(int id, CancellationToken cancellationToken) => Task.FromResult(Loan?.Id == id ? Loan : null);
         public Task<bool> LoanHasPaymentsAsync(int loanId, CancellationToken cancellationToken) => Task.FromResult(HasPayments);
@@ -87,7 +105,7 @@ public sealed class LoanManagementServiceTests
         public Task<long> GetNextApplicationNumberAsync(CancellationToken cancellationToken) => Task.FromResult(NextNumber);
         public Task UpdateLoanAsync(LoanApplication loan, CancellationToken cancellationToken) => throw new NotImplementedException();
         public Task UpdateLoanAndAddEmiScheduleAsync(LoanApplication loan, IReadOnlyCollection<EmiSchedule> schedule, CancellationToken cancellationToken) => throw new NotImplementedException();
-        public Task<LoanProduct?> GetLoanProductAsync(string name, CancellationToken cancellationToken) => throw new NotImplementedException();
+        public Task<LoanProduct?> GetLoanProductAsync(string name, CancellationToken cancellationToken) => Task.FromResult(ActiveProducts.Contains(name) ? new LoanProduct { Name = name, IsActive = true } : null);
         public Task<IReadOnlyList<EmiSchedule>> GetEmiScheduleAsync(int loanId, CancellationToken cancellationToken) => throw new NotImplementedException();
         public Task<DashboardSummary> GetDashboardSummaryAsync(CancellationToken cancellationToken) => throw new NotImplementedException();
     }

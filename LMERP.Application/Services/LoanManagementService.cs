@@ -57,6 +57,8 @@ public sealed class LoanManagementService(ILoanManagementRepository repository, 
 
     public async Task<OperationResult<LoanResponse>> CreateLoanAsync(LoanRequest request, CancellationToken cancellationToken)
     {
+        if (await repository.GetLoanProductAsync(request.Product.Trim(), cancellationToken) is null)
+            return OperationResult<LoanResponse>.BadRequest("Select an active loan product.");
         var customer = await repository.GetActiveCustomerAsync(request.CustomerId, cancellationToken);
         if (customer is null) return OperationResult<LoanResponse>.BadRequest("Select an active customer before creating an application.");
         var loan = new LoanApplication
@@ -80,6 +82,12 @@ public sealed class LoanManagementService(ILoanManagementRepository repository, 
 
         var hasEmiSchedule = await repository.HasEmiScheduleAsync(id, cancellationToken);
         loan.RowVersion = ParseRowVersion(request.RowVersion);
+        var normalizedProduct = request.Product.Trim();
+        if (loan.Product != normalizedProduct || status == "Approved" && loan.Status != "Approved")
+        {
+            if (await repository.GetLoanProductAsync(normalizedProduct, cancellationToken) is null)
+                return OperationResult<LoanResponse>.BadRequest("Select an active loan product.");
+        }
         if (hasEmiSchedule)
         {
             var loanTermsChanged = loan.Product != request.Product.Trim()
@@ -93,7 +101,7 @@ public sealed class LoanManagementService(ILoanManagementRepository repository, 
                 return OperationResult<LoanResponse>.Conflict("An approved loan with an EMI schedule cannot be moved back to another status.");
         }
 
-        loan.Product = request.Product.Trim();
+        loan.Product = normalizedProduct;
         loan.RequestedAmount = request.RequestedAmount;
         loan.TenureMonths = request.TenureMonths;
         loan.InterestRate = request.InterestRate;

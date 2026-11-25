@@ -34,7 +34,7 @@ public sealed class EmiRepaymentService(LoanDbContext db, IConfiguration configu
     }
 
     public async Task<IReadOnlyList<LoanProductResponse>> GetProductsAsync(CancellationToken ct) =>
-        (await db.LoanProducts.AsNoTracking().OrderBy(x => x.Name).ToListAsync(ct)).Select(ToResponse).ToArray();
+        (await db.LoanProducts.AsNoTracking().Where(x => x.IsActive).OrderBy(x => x.Name).ToListAsync(ct)).Select(ToResponse).ToArray();
 
     public async Task<LoanProductResponse> SaveProductAsync(int? id, LoanProductLateFeeRequest request, CancellationToken ct)
     {
