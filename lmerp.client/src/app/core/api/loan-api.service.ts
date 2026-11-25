@@ -6,8 +6,10 @@ interface ApiEnvelope<T> { success: boolean; message: string; data: T | null; er
 
 export interface CustomerDto { id: number; fullName: string; phone: string; email?: string; city?: string; status: string; createdAt: string; loanCount: number; }
 export interface CustomerWrite { fullName: string; phone: string; email?: string; city?: string; status: string; }
-export interface LoanDto { id: number; applicationNumber: string; customerId: number; customerName: string; product: string; requestedAmount: number; tenureMonths: number; status: string; appliedAt: string; }
-export interface LoanWrite { customerId: number; product: string; requestedAmount: number; tenureMonths: number; }
+export type LoanStatus = 'Under review' | 'Documents needed' | 'Approved';
+export interface LoanDto { id: number; applicationNumber: string; customerId: number; customerName: string; product: string; requestedAmount: number; tenureMonths: number; interestRate: number; isFlatInterest: boolean; status: string; appliedAt: string; }
+export interface LoanWrite { customerId: number; product: string; requestedAmount: number; tenureMonths: number; interestRate: number; isFlatInterest: boolean; }
+export interface LoanUpdateWrite { product: string; requestedAmount: number; tenureMonths: number; interestRate: number; isFlatInterest: boolean; status: LoanStatus; }
 export interface DashboardSummaryDto { customerCount: number; totalLoans: number; activeLoans: number; pendingApplications: number; totalDisbursed: number; outstandingAmount: number; overdueLoans: number; }
 
 @Injectable({ providedIn: 'root' })
@@ -19,5 +21,7 @@ export class LoanApiService {
   deleteCustomer(id: number): Observable<void> { return this.http.delete<ApiEnvelope<boolean>>(`/api/customers/${id}`).pipe(map(() => undefined)); }
   loans(): Observable<LoanDto[]> { return this.http.get<ApiEnvelope<LoanDto[]>>('/api/loans').pipe(map(response => response.data ?? [])); }
   createLoan(loan: LoanWrite): Observable<LoanDto> { return this.http.post<ApiEnvelope<LoanDto>>('/api/loans', loan).pipe(map(response => response.data!)); }
+  updateLoan(id: number, loan: LoanUpdateWrite): Observable<LoanDto> { return this.http.put<ApiEnvelope<LoanDto>>(`/api/loans/${id}`, loan).pipe(map(response => response.data!)); }
+  deleteLoan(id: number): Observable<void> { return this.http.delete<ApiEnvelope<boolean>>(`/api/loans/${id}`).pipe(map(() => undefined)); }
   dashboardSummary(): Observable<DashboardSummaryDto> { return this.http.get<ApiEnvelope<DashboardSummaryDto>>('/api/dashboard/summary').pipe(map(response => response.data!)); }
 }

@@ -36,4 +36,15 @@ describe('AdminPageComponent API failures', () => {
     expect(component.toast()).toContain('Customer service is unavailable.');
     expect(component.toast()).toContain('Try again later.');
   });
+
+  it('clears an edited customer id after cancel before opening a create form', () => {
+    const component = fixture.componentInstance;
+    component.openEdit({ id: '17', customer: 'Customer A|CUS-00017', phone: '90000', email: '', city: '', status: 'Active' });
+    expect(component.editingId()).toBe(17);
+
+    component.closeDialog();
+    component.openDialog();
+
+    expect(component.editingId()).toBeNull();
+  });
 });

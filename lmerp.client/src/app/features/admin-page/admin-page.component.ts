@@ -3,7 +3,7 @@ import { CommonModule } from '@angular/common';
 import { FormControl, FormRecord, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ActivatedRoute } from '@angular/router';
 import { catchError, of } from 'rxjs';
-import { CustomerDto, LoanApiService } from '../../core/api/loan-api.service';
+import { CustomerDto, LoanApiService, LoanDto, LoanStatus } from '../../core/api/loan-api.service';
 
 interface PageRow { [key: string]: string; }
 interface PageDefinition { title: string; description: string; action: string; columns: { key: string; label: string }[]; rows: PageRow[]; fields: { key: string; label: string; type?: string; options?: string[] }[]; }
@@ -31,7 +31,7 @@ const definitions: Record<string, PageDefinition> = {
       {application:'Priya Sharma|LN-2025-0838',product:'Personal loan',amount:'₹ 1,20,000',date:'Yesterday',status:'Under review'},
       {application:'Vikram Khanna|LN-2025-0837',product:'Home loan',amount:'₹ 32,00,000',date:'17 Nov 2025',status:'Disbursed'},
       {application:'Neha Kapoor|LN-2025-0836',product:'Personal loan',amount:'₹ 3,00,000',date:'17 Nov 2025',status:'Rejected'}
-    ], fields:[{key:'customerId',label:'Customer',type:'select'},{key:'product',label:'Loan product',type:'select',options:['Personal loan','Business loan','Vehicle loan','Home loan']},{key:'requestedAmount',label:'Requested amount',type:'number'},{key:'tenureMonths',label:'Tenure (months)',type:'number'}]
+    ], fields:[{key:'customerId',label:'Customer',type:'select'},{key:'product',label:'Loan product',type:'select',options:['Personal loan','Business loan','Vehicle loan','Home loan']},{key:'requestedAmount',label:'Requested amount',type:'number'},{key:'tenureMonths',label:'Tenure (months)',type:'number'},{key:'interestRate',label:'Interest rate (% per year)',type:'number'},{key:'interestType',label:'Interest type',type:'select',options:['Flat','Reducing balance']}]
   },
   repayments:{
     title:'Repayments',description:'Track installment schedules, payment history, and early settlements.',action:'Record payment',
@@ -86,6 +86,7 @@ export class AdminPageComponent {
   readonly sortAscending = signal(true);
   readonly pageIndex = signal(0);
   readonly definition = computed(() => definitions[this.section()] ?? definitions['customers']);
+  readonly showLoanStatusField = computed(() => this.section() === 'loans' && this.editingId() !== null);
   readonly rows = signal<PageRow[]>([]);
   readonly filteredRows = computed(() => {
     const term = this.query().trim().toLowerCase();
@@ -136,15 +137,41 @@ export class AdminPageComponent {
   }
   makeForm(): void {
     const controls = new FormRecord<FormControl<string>>({});
-    for (const field of this.definition().fields) controls.addControl(field.key, new FormControl('', { nonNullable: true, validators: [Validators.required] }));
+    for (const field of this.definition().fields) {
+      const validators = [Validators.required];
+      if (field.key === 'interestRate') validators.push(Validators.min(0.01), Validators.max(100));
+      if (field.key === 'requestedAmount') validators.push(Validators.min(1));
+      if (field.key === 'tenureMonths') validators.push(Validators.min(1), Validators.max(360));
+      controls.addControl(field.key, new FormControl('', { nonNullable: true, validators }));
+    }
     this.form = controls;
   }
-  openDialog(): void { this.makeForm(); this.showDialog.set(true); }
+  openDialog(): void { this.editingId.set(null); this.makeForm(); this.showDialog.set(true); }
   openView(row: PageRow): void { this.detailRow.set(row); }
   closeView(): void { this.detailRow.set(null); }
   openEdit(row: PageRow): void {
     this.makeForm();
     this.editingId.set(row['id'] ? Number(row['id']) : null);
+    if (this.section() === 'loans') {
+      if (!this.editingId()) { this.notify('Connect to the API to edit saved loan applications.'); return; }
+      this.form.addControl('status', new FormControl('', { nonNullable: true, validators: [Validators.required] }));
+      const customerId = row['customerId'] ?? '';
+      if (customerId && !this.loanCustomerOptions().some(option => option.value === customerId)) {
+        this.loanCustomerOptions.update(options => [...options, { value: customerId, label: row['customerName'] ?? 'Current customer' }]);
+      }
+      this.form.patchValue({
+        customerId,
+        product: row['product'] ?? '',
+        requestedAmount: row['requestedAmount'] ?? '',
+        tenureMonths: row['tenureMonths'] ?? '',
+        interestRate: row['interestRate'] ?? '',
+        interestType: row['isFlatInterest'] === 'true' ? 'Flat' : 'Reducing balance',
+        status: row['status'] ?? ''
+      });
+      this.form.controls['customerId'].disable();
+      this.showDialog.set(true);
+      return;
+    }
     const values: Record<string, string> = {};
     const customer = this.primary(row['customer'] ?? row['application'] ?? row['user'] ?? '');
     for (const field of this.definition().fields) {
@@ -159,7 +186,7 @@ export class AdminPageComponent {
     this.form.patchValue(values);
     this.showDialog.set(true);
   }
-  closeDialog(): void { this.showDialog.set(false); }
+  closeDialog(): void { this.showDialog.set(false); this.editingId.set(null); }
   save(): void {
     if (this.form.invalid) { this.form.markAllAsTouched(); return; }
     const values = this.form.getRawValue() as Record<string, string>;
@@ -176,11 +203,15 @@ export class AdminPageComponent {
       return;
     }
     if (this.section() === 'loans') {
-      this.api.createLoan({ customerId: Number(values['customerId']), product: values['product'], requestedAmount: Number(values['requestedAmount']), tenureMonths: Number(values['tenureMonths']) }).subscribe({
+      const loanTerms = { product: values['product'], requestedAmount: Number(values['requestedAmount']), tenureMonths: Number(values['tenureMonths']), interestRate: Number(values['interestRate']), isFlatInterest: values['interestType'] === 'Flat' };
+      const request$ = this.editingId()
+        ? this.api.updateLoan(this.editingId()!, { ...loanTerms, status: values['status'] as LoanStatus })
+        : this.api.createLoan({ ...loanTerms, customerId: Number(values['customerId']) });
+      request$.subscribe({
         next: loan => {
-          const row: PageRow = { id: String(loan.id), application: `${loan.customerName}|${loan.applicationNumber}`, product: loan.product, amount: `₹ ${loan.requestedAmount.toLocaleString('en-IN')}`, date: new Date(loan.appliedAt).toLocaleDateString('en-IN'), status: loan.status };
-          this.rows.update(current => [row, ...current]);
-          this.pageIndex.set(0);
+          const row = this.loanRow(loan);
+          this.rows.update(current => this.editingId() ? current.map(item => Number(item['id']) === loan.id ? row : item) : [row, ...current]);
+          if (!this.editingId()) this.pageIndex.set(0);
           this.finishSave();
         },
         error: error => this.notify(this.errorMessage(error))
@@ -214,17 +245,28 @@ export class AdminPageComponent {
     } else if (this.section() === 'loans') {
       this.api.customers().pipe(catchError(error => { this.notify(this.errorMessage(error)); return of([]); })).subscribe(customers => this.loanCustomerOptions.set(customers.filter(customer => customer.status === 'Active').map(customer => ({ value: String(customer.id), label: customer.fullName }))));
       this.api.loans().pipe(catchError(error => { this.notify(this.errorMessage(error)); return of(null); })).subscribe(loans => {
-        if (loans) { this.rows.set(loans.map(loan => ({ id: String(loan.id), application: `${loan.customerName}|${loan.applicationNumber}`, product: loan.product, amount: `₹ ${loan.requestedAmount.toLocaleString('en-IN')}`, date: new Date(loan.appliedAt).toLocaleDateString('en-IN'), status: loan.status }))); this.previewMode.set(false); }
+        if (loans) { this.rows.set(loans.map(loan => this.loanRow(loan))); this.previewMode.set(false); }
       });
     }
   }
   private customerRow(customer: CustomerDto): PageRow {
     return { id: String(customer.id), customer: `${customer.fullName}|CUS-${String(customer.id).padStart(5, '0')}`, phone: customer.phone, email: customer.email ?? '—', city: customer.city ?? '—', loans: `${customer.loanCount} ${customer.loanCount === 1 ? 'loan' : 'loans'}`, joined: new Date(customer.createdAt).toLocaleDateString('en-IN'), status: customer.status };
   }
+  private loanRow(loan: LoanDto): PageRow {
+    return { id: String(loan.id), customerId: String(loan.customerId), customerName: loan.customerName, application: `${loan.customerName}|${loan.applicationNumber}`, applicationNumber: loan.applicationNumber, product: loan.product, requestedAmount: String(loan.requestedAmount), tenureMonths: String(loan.tenureMonths), interestRate: String(loan.interestRate), isFlatInterest: String(loan.isFlatInterest), amount: `₹ ${loan.requestedAmount.toLocaleString('en-IN')}`, date: new Date(loan.appliedAt).toLocaleDateString('en-IN'), status: loan.status };
+  }
   remove(row: PageRow): void {
     const name = this.primary(row[this.definition().columns[0].key] ?? 'this record');
-    if (!window.confirm(`Remove ${name}? This action cannot be undone.`)) return;
+    const confirmation = this.section() === 'loans' ? `Archive loan application ${name}? It will be removed from active lists but retained in the database.` : `Remove ${name}? This action cannot be undone.`;
+    if (!window.confirm(confirmation)) return;
     const removeLocal = () => this.rows.update(current => current.filter(item => item !== row));
+    if (this.section() === 'loans' && row['id']) {
+      this.api.deleteLoan(Number(row['id'])).subscribe({
+        next: () => { removeLocal(); this.notify('Loan application archived.'); },
+        error: error => this.notify(this.errorMessage(error))
+      });
+      return;
+    }
     if (this.section() === 'customers' && row['id']) {
       this.api.deleteCustomer(Number(row['id'])).subscribe({
         next: () => { removeLocal(); this.notify('Customer removed.'); },
