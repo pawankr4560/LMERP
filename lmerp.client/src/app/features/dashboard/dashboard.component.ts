@@ -1,6 +1,9 @@
-import { Component, inject, signal } from '@angular/core';
+import { Component, computed, inject, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
-import { LoanApiService } from '../../core/api/loan-api.service';
+import { catchError, forkJoin, of } from 'rxjs';
+import { DashboardSummaryDto, DashboardTransactionDto, LoanApiService, LoanDto } from '../../core/api/loan-api.service';
+
+type DashboardStat = { label: string; value: string; icon: string; tone: string; note: string };
 
 @Component({
   standalone: true,
@@ -9,47 +12,68 @@ import { LoanApiService } from '../../core/api/loan-api.service';
   styleUrl: './dashboard.component.css'
 })
 export class DashboardComponent {
+  private readonly api = inject(LoanApiService);
   readonly todayLabel = new Intl.DateTimeFormat('en-IN', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }).format(new Date()).toUpperCase();
-  readonly stats = signal([
-    { label: 'Total loans', value: '1,846', change: '+10.4%', icon: '▤', tone: 'blue', note: 'vs. last month' },
-    { label: 'Total disbursed', value: '₹ 24.8 Cr', change: '+12.8%', icon: '↗', tone: 'green', note: 'vs. last month' },
-    { label: 'Active loans', value: '1,284', change: '+8.2%', icon: '▤', tone: 'blue', note: 'vs. last month' },
-    { label: 'Pending applications', value: '42', change: '+6.1%', icon: '◷', tone: 'orange', note: 'awaiting review' },
-    { label: 'Outstanding', value: '₹ 18.2 Cr', change: '+4.3%', icon: '◉', tone: 'violet', note: 'vs. last month' },
-    { label: 'Overdue amount', value: '₹ 2.46 L', change: '−2.1%', icon: '◷', tone: 'orange', note: 'vs. last month' }
+  readonly stats = signal<DashboardStat[]>([
+    { label: 'Total loans', value: '—', icon: '▤', tone: 'blue', note: 'All active records' },
+    { label: 'Total disbursed', value: '—', icon: '↗', tone: 'green', note: 'Disbursed and closed' },
+    { label: 'Active loans', value: '—', icon: '▤', tone: 'blue', note: 'Currently disbursed' },
+    { label: 'Pending applications', value: '—', icon: '◷', tone: 'orange', note: 'Awaiting review' },
+    { label: 'Outstanding', value: '—', icon: '◉', tone: 'violet', note: 'EMI and late fee balances' },
+    { label: 'Overdue amount', value: '—', icon: '◷', tone: 'orange', note: 'Past due' }
   ]);
-  readonly months = [
-    { label: 'Jan', value: 49, second: 35 }, { label: 'Feb', value: 62, second: 41 },
-    { label: 'Mar', value: 54, second: 38 }, { label: 'Apr', value: 72, second: 49 },
-    { label: 'May', value: 66, second: 45 }, { label: 'Jun', value: 85, second: 61 },
-    { label: 'Jul', value: 74, second: 54 }, { label: 'Aug', value: 92, second: 66 },
-    { label: 'Sep', value: 80, second: 60 }, { label: 'Oct', value: 97, second: 73 },
-    { label: 'Nov', value: 88, second: 65 }, { label: 'Dec', value: 100, second: 79 }
-  ];
-  readonly applications = [
-    { initials: 'RK', name: 'Rahul Kumar', id: 'LN-2025-0841', type: 'Personal loan', amount: '₹ 2,50,000', date: 'Today, 10:42 AM', status: 'Under review', tone: 'review', color: 'sand' },
-    { initials: 'SP', name: 'Sneha Patel', id: 'LN-2025-0840', type: 'Business loan', amount: '₹ 8,00,000', date: 'Today, 09:18 AM', status: 'Approved', tone: 'approved', color: 'lilac' },
-    { initials: 'AM', name: 'Arjun Mehta', id: 'LN-2025-0839', type: 'Vehicle loan', amount: '₹ 5,75,000', date: 'Yesterday', status: 'Documents needed', tone: 'needed', color: 'mint' },
-    { initials: 'PS', name: 'Priya Sharma', id: 'LN-2025-0838', type: 'Personal loan', amount: '₹ 1,20,000', date: 'Yesterday', status: 'Under review', tone: 'review', color: 'rose' }
-  ];
-  readonly transactions = [
-    { initials: 'SP', name: 'Sneha Patel', detail: 'Loan disbursement · LN-0832', amount: '+ ₹ 8,00,000', time: '10:24 AM', kind: 'out' },
-    { initials: 'VK', name: 'Vikram K.', detail: 'EMI repayment · LN-0718', amount: '+ ₹ 18,500', time: '09:56 AM', kind: 'in' },
-    { initials: 'NK', name: 'Neha Kapoor', detail: 'EMI repayment · LN-0654', amount: '+ ₹ 12,200', time: '09:31 AM', kind: 'in' }
-  ];
+  readonly loans = signal<LoanDto[]>([]);
+  readonly transactions = signal<DashboardTransactionDto[]>([]);
+  readonly loadError = signal('');
+  readonly applications = computed(() => [...this.loans()].sort((a, b) => Date.parse(b.appliedAt) - Date.parse(a.appliedAt)).slice(0, 5));
+  readonly portfolio = computed(() => {
+    const items = this.loans();
+    const total = items.length;
+    const count = (predicate: (loan: LoanDto) => boolean) => items.filter(predicate).length;
+    return [
+      { label: 'Disbursed', count: count(loan => loan.status === 'Disbursed'), tone: 'legend-active' },
+      { label: 'Closed', count: count(loan => loan.status === 'Closed'), tone: 'legend-closed' },
+      { label: 'In review', count: count(loan => !['Disbursed', 'Closed', 'Rejected'].includes(loan.status)), tone: 'legend-overdue' },
+      { label: 'Rejected', count: count(loan => loan.status === 'Rejected'), tone: 'legend-rejected' }
+    ].map(item => ({ ...item, percent: total ? Math.round(item.count * 100 / total) : 0 }));
+  });
+  readonly monthlyApplications = computed(() => {
+    const now = new Date();
+    const buckets = Array.from({ length: 12 }, (_, index) => {
+      const date = new Date(now.getFullYear(), now.getMonth() - 11 + index, 1);
+      return { label: new Intl.DateTimeFormat('en-IN', { month: 'short' }).format(date), year: date.getFullYear(), month: date.getMonth(), count: 0 };
+    });
+    for (const loan of this.loans()) {
+      const date = new Date(loan.appliedAt);
+      const bucket = buckets.find(item => item.year === date.getFullYear() && item.month === date.getMonth());
+      if (bucket) bucket.count++;
+    }
+    const max = Math.max(1, ...buckets.map(item => item.count));
+    return buckets.map(item => ({ ...item, height: Math.max(item.count ? 8 : 2, item.count * 100 / max) }));
+  });
 
   constructor() {
-    inject(LoanApiService).dashboardSummary().subscribe({
-      next: summary => this.stats.update(items => items.map(item => {
-        if (item.label === 'Total loans') return { ...item, value: summary.totalLoans.toLocaleString('en-IN') };
-        if (item.label === 'Pending applications') return { ...item, value: summary.pendingApplications.toLocaleString('en-IN') };
-        if (item.label === 'Total disbursed') return { ...item, value: this.currency(summary.totalDisbursed) };
-        if (item.label === 'Active loans') return { ...item, value: summary.activeLoans.toLocaleString('en-IN') };
-        if (item.label === 'Outstanding') return { ...item, value: this.currency(summary.outstandingAmount) };
-        if (item.label === 'Overdue amount') return { ...item, value: this.currency(summary.overdueAmount), note: `${summary.overdueLoans} overdue loans` };
-        return item;
-      }))
+    forkJoin({
+      summary: this.api.dashboardSummary().pipe(catchError(() => of(null))),
+      loans: this.api.loans().pipe(catchError(() => of(null))),
+      transactions: this.api.recentDashboardTransactions().pipe(catchError(() => of(null)))
+    }).subscribe(({ summary, loans, transactions }) => {
+      if (summary) this.bindSummary(summary);
+      if (loans) this.loans.set(loans);
+      if (transactions) this.transactions.set(transactions);
+      if (!summary || !loans || !transactions) this.loadError.set('Some dashboard data could not be loaded. Check the API connection and refresh.');
     });
+  }
+
+  private bindSummary(summary: DashboardSummaryDto): void {
+    this.stats.set([
+      { label: 'Total loans', value: summary.totalLoans.toLocaleString('en-IN'), icon: '▤', tone: 'blue', note: 'All active records' },
+      { label: 'Total disbursed', value: this.currency(summary.totalDisbursed), icon: '↗', tone: 'green', note: 'Disbursed and closed' },
+      { label: 'Active loans', value: summary.activeLoans.toLocaleString('en-IN'), icon: '▤', tone: 'blue', note: 'Currently disbursed' },
+      { label: 'Pending applications', value: summary.pendingApplications.toLocaleString('en-IN'), icon: '◷', tone: 'orange', note: 'Awaiting review' },
+      { label: 'Outstanding', value: this.currency(summary.outstandingAmount), icon: '◉', tone: 'violet', note: 'EMI and late fee balances' },
+      { label: 'Overdue amount', value: this.currency(summary.overdueAmount), icon: '◷', tone: 'orange', note: `${summary.overdueLoans} overdue loans` }
+    ]);
   }
 
   currency(amount: number): string {
@@ -57,5 +81,15 @@ export class DashboardComponent {
     if (amount >= 1e7) return `₹ ${formatter.format(amount / 1e7)} Cr`;
     if (amount >= 1e5) return `₹ ${formatter.format(amount / 1e5)} L`;
     return `₹ ${new Intl.NumberFormat('en-IN', { maximumFractionDigits: 2 }).format(amount)}`;
+  }
+  initials(value: string): string { return value.split(' ').map(part => part[0] ?? '').slice(0, 2).join('').toUpperCase(); }
+  money(value: number): string { return `₹ ${value.toLocaleString('en-IN')}`; }
+  date(value: string): string { return new Date(value).toLocaleDateString('en-IN'); }
+  time(value: string): string { return new Date(value).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }); }
+  transactionDetail(item: DashboardTransactionDto): string { return `${item.type === 'Disbursement' ? 'Loan disbursement' : 'EMI repayment'} · ${item.applicationNumber}${item.method ? ` · ${item.method}` : ''}`; }
+  statusTone(status: string): string {
+    if (status === 'Approved' || status === 'Disbursed' || status === 'Closed') return 'approved';
+    if (status === 'Rejected') return 'needed';
+    return 'review';
   }
 }

@@ -62,8 +62,16 @@ public sealed class LoanManagementRepository(LoanDbContext db, IBusinessClock bu
         await db.SaveChangesAsync(cancellationToken);
     }
 
-    public Task<long> GetNextApplicationNumberAsync(CancellationToken cancellationToken) =>
-        db.Database.SqlQuery<long>($"SELECT NEXT VALUE FOR LoanApplicationNumbers").SingleAsync(cancellationToken);
+    public async Task<long> GetNextApplicationNumberAsync(CancellationToken cancellationToken)
+    {
+        // Keep this as a non-composed query: SQL Server does not allow NEXT VALUE FOR inside a subquery,
+        // and SingleAsync() composes the scalar query into one.
+        var values = await db.Database
+            .SqlQuery<long>($"SELECT NEXT VALUE FOR [dbo].[LoanApplicationNumbers] AS [Value]")
+            .ToListAsync(cancellationToken);
+
+        return values.Single();
+    }
 
     public async Task UpdateLoanAndAddEmiScheduleAsync(LoanApplication loan, IReadOnlyCollection<EmiSchedule> schedule, CancellationToken cancellationToken)
     {
@@ -98,30 +106,85 @@ public sealed class LoanManagementRepository(LoanDbContext db, IBusinessClock bu
 
     public async Task<DashboardSummary> GetDashboardSummaryAsync(CancellationToken cancellationToken)
     {
-        var totalLoans = await db.LoanApplications.CountAsync(cancellationToken);
-        var activeLoans = await db.LoanApplications.CountAsync(loan => loan.Status == LoanStatuses.Disbursed, cancellationToken);
-        var pendingApplications = await db.LoanApplications.CountAsync(loan => loan.Status == LoanStatuses.UnderReview || loan.Status == LoanStatuses.DocumentsNeeded, cancellationToken);
+        var totalLoans = await db.LoanApplications.CountAsync(loan=>!loan.IsDeleted,cancellationToken);
+        var activeLoans = await db.LoanApplications.CountAsync(loan => !loan.IsDeleted && loan.Status == LoanStatuses.Disbursed, cancellationToken);
+        var pendingApplications = await db.LoanApplications.CountAsync(loan =>!loan.IsDeleted && loan.Status == LoanStatuses.UnderReview || loan.Status == LoanStatuses.DocumentsNeeded, cancellationToken);
         var totalDisbursed = await db.LoanApplications
-            .Where(loan => loan.Status == LoanStatuses.Disbursed || loan.Status == LoanStatuses.Closed)
+            .Where(loan =>!loan.IsDeleted && loan.Status == LoanStatuses.Disbursed || loan.Status == LoanStatuses.Closed)
             .SumAsync(loan => (decimal?)loan.RequestedAmount, cancellationToken) ?? 0m;
-        var scheduleBalances = db.EmiSchedules.AsNoTracking()
-            .Where(schedule => schedule.LoanApplication!.Status == LoanStatuses.Disbursed && schedule.Status != "Paid")
+        var schedules = await db.EmiSchedules.AsNoTracking()
+            .Where(schedule => schedule.LoanApplication!.Status == LoanStatuses.Disbursed)
             .Select(schedule => new
             {
+                schedule.Id,
                 schedule.LoanApplicationId,
                 schedule.DueDate,
-                Balance = schedule.EmiAmount - db.EmiPaymentAllocations
+                schedule.EmiAmount,
+                EmiPaid = db.EmiPaymentAllocations
                     .Where(allocation => allocation.EmiScheduleId == schedule.Id && allocation.Component == "Emi")
-                    .Sum(allocation => (decimal?)allocation.Amount).GetValueOrDefault()
-            });
-        var outstanding = await scheduleBalances.SumAsync(schedule => (decimal?)schedule.Balance, cancellationToken) ?? 0m;
+                    .Sum(allocation => (decimal?)allocation.Amount) ?? 0m
+            }).ToListAsync(cancellationToken);
+        var pendingFees = await db.EmiLateFees.AsNoTracking()
+            .Where(fee => fee.Status == "Pending")
+            .Select(fee => new
+            {
+                fee.EmiScheduleId,
+                Balance = fee.PenaltyAmount - db.EmiPaymentAllocations
+                    .Where(allocation => allocation.EmiLateFeeId == fee.Id && allocation.Component == "LateFee")
+                    .Sum(allocation => (decimal?)allocation.Amount) ?? 0m
+            }).ToListAsync(cancellationToken);
+        var feesBySchedule = pendingFees.GroupBy(fee => fee.EmiScheduleId)
+            .ToDictionary(group => group.Key, group => group.Sum(fee => Math.Max(0m, fee.Balance)));
+        var scheduleBalances = schedules.Select(schedule => new
+        {
+            schedule.LoanApplicationId,
+            schedule.DueDate,
+            Balance = Math.Max(0m, schedule.EmiAmount - schedule.EmiPaid)
+                + feesBySchedule.GetValueOrDefault(schedule.Id)
+        }).Where(schedule => schedule.Balance > 0m).ToArray();
+        var outstanding = scheduleBalances.Sum(schedule => schedule.Balance);
         var localMidnight = businessClock.Today.ToDateTime(TimeOnly.MinValue);
         var businessDayStart = new DateTimeOffset(localMidnight, businessClock.TimeZone.GetUtcOffset(localMidnight));
-        var overdueSchedules = scheduleBalances.Where(schedule => schedule.DueDate < businessDayStart && schedule.Balance > 0m);
-        var overdueLoans = await overdueSchedules.Select(schedule => schedule.LoanApplicationId).Distinct().CountAsync(cancellationToken);
-        var overdueAmount = await overdueSchedules.SumAsync(schedule => (decimal?)schedule.Balance, cancellationToken) ?? 0m;
+        var overdueSchedules = scheduleBalances.Where(schedule => schedule.DueDate < businessDayStart);
+        var overdueLoans = overdueSchedules.Select(schedule => schedule.LoanApplicationId).Distinct().Count();
+        var overdueAmount = overdueSchedules.Sum(schedule => schedule.Balance);
         return new DashboardSummary(
             await db.Customers.CountAsync(cancellationToken), totalLoans, activeLoans, pendingApplications,
             totalDisbursed, outstanding, overdueLoans, overdueAmount);
+    }
+
+    public async Task<IReadOnlyList<DashboardTransactionResponse>> GetRecentDashboardTransactionsAsync(CancellationToken cancellationToken)
+    {
+        var payments = await db.EmiPayments.AsNoTracking()
+            .OrderByDescending(payment => payment.ReceivedAt)
+            .Take(10)
+            .Select(payment => new DashboardTransactionResponse(
+                payment.Id,
+                payment.EmiSchedule!.LoanApplication!.Customer!.FullName,
+                payment.EmiSchedule.LoanApplication.ApplicationNumber,
+                "Repayment",
+                payment.Amount,
+                payment.ReceivedAt,
+                payment.Method))
+            .ToListAsync(cancellationToken);
+
+        var disbursements = await db.LoanApplications.AsNoTracking()
+            .Where(loan => loan.DisbursedAt.HasValue)
+            .OrderByDescending(loan => loan.DisbursedAt)
+            .Take(10)
+            .Select(loan => new DashboardTransactionResponse(
+                -loan.Id,
+                loan.Customer!.FullName,
+                loan.ApplicationNumber,
+                "Disbursement",
+                loan.RequestedAmount,
+                loan.DisbursedAt!.Value,
+                null))
+            .ToListAsync(cancellationToken);
+
+        return payments.Concat(disbursements)
+            .OrderByDescending(transaction => transaction.OccurredAt)
+            .Take(5)
+            .ToArray();
     }
 }

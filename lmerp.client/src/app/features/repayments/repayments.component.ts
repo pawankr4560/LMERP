@@ -17,18 +17,27 @@ export class RepaymentsComponent {
   readonly showProducts = signal(false);
   readonly editingProduct = signal<number | null>(null);
   readonly productForm = signal<LoanProductWrite>({ name: '', isActive: true, isLateFeeApplicable: false, lateFeeRate: 0, lateFeeCalculationType: 'DailyPercentageOfEmi', gracePeriodDays: 0, maximumLateFeeAmount: undefined, maximumPenaltyDays: undefined });
-  readonly isAdmin = () => this.auth.roles().includes('Administrator');
+  readonly isAdmin = () => this.auth.hasRole('Administrator');
   constructor() { this.refresh(); this.loadProducts(); }
   refresh(): void { this.loading.set(true); this.api.overdueEmis().pipe(catchError(() => { this.message.set('Could not load overdue EMI records. Check the API connection.'); return of([]); })).subscribe(rows => { this.rows.set(rows); this.loading.set(false); }); this.api.repaymentSummary().pipe(catchError(() => of(null))).subscribe(summary => { if (summary) this.summary.set(summary); }); }
   loadProducts(): void { this.api.loanProducts().pipe(catchError(() => of([]))).subscribe(products => this.products.set(products)); }
   recordPayment(row: OverdueEmiDto): void {
-    const raw = window.prompt(`Outstanding amount ₹${row.totalOutstanding.toLocaleString('en-IN')}. Enter payment amount:`);
-    if (raw === null) return;
-    const amount = Number(raw);
-    if (!Number.isFinite(amount) || amount <= 0) { this.message.set('Enter a valid positive payment amount.'); return; }
-    const method = window.prompt('Payment method (UPI, Bank transfer, Cash, etc.):', 'UPI');
-    if (!method) return;
-    this.api.collectEmiPayment(row.emiScheduleId, { amount, method }).subscribe({ next: () => { this.message.set('Payment recorded and allocated to EMI first, then oldest late fees.'); this.refresh(); }, error: error => this.message.set(error.error?.message ?? 'Could not record payment.') });
+    this.api.emiDetails(row.emiScheduleId).subscribe({
+      next: details => {
+        this.rows.update(current => current.map(item => item.emiScheduleId === details.emiScheduleId ? details : item));
+        if (details.totalOutstanding <= 0) { this.message.set('There is no EMI or late fee balance left to collect.'); return; }
+        const raw = window.prompt(
+          `EMI ₹${details.emiOutstanding.toLocaleString('en-IN', { minimumFractionDigits: 2 })} + late fees ₹${details.lateFeesOutstanding.toLocaleString('en-IN', { minimumFractionDigits: 2 })} = total due ₹${details.totalOutstanding.toLocaleString('en-IN', { minimumFractionDigits: 2 })}. Enter amount to collect:`,
+          details.totalOutstanding.toFixed(2));
+        if (raw === null) return;
+        const amount = Number(raw);
+        if (!Number.isFinite(amount) || amount <= 0) { this.message.set('Enter a valid positive payment amount.'); return; }
+        const method = window.prompt('Payment method (UPI, Bank transfer, Cash, etc.):', 'UPI');
+        if (!method) return;
+        this.api.collectEmiPayment(details.emiScheduleId, { amount, method }).subscribe({ next: () => { this.message.set('Payment recorded and allocated to EMI first, then oldest late fees.'); this.refresh(); }, error: error => this.message.set(error.error?.message ?? 'Could not record payment.') });
+      },
+      error: error => this.message.set(error.error?.message ?? 'Could not load the current EMI and late fee balance.')
+    });
   }
   waive(feeId: number): void {
     const reason = window.prompt('Enter the reason for waiving this late fee (minimum 5 characters):');
@@ -51,7 +60,7 @@ export class RepaymentsComponent {
     if (form.isLateFeeApplicable && form.lateFeeRate <= 0) { this.message.set('A positive daily rate is required when late fees are enabled.'); return; }
     if (form.isLateFeeApplicable && !form.maximumLateFeeAmount && !form.maximumPenaltyDays) { this.message.set('Set a maximum fee amount or maximum penalty days before enabling fees.'); return; }
     const save$ = this.editingProduct() ? this.api.updateLoanProduct(this.editingProduct()!, form) : this.api.saveLoanProduct(form);
-    save$.subscribe({ next: () => { this.message.set('Loan product settings saved. They apply to EMI schedules generated from now on.'); this.loadProducts(); this.newProduct(); }, error: error => this.message.set(error.error?.message ?? 'Could not save product settings.') });
+    save$.subscribe({ next: () => { this.message.set('Loan product settings saved. They apply to new EMIs and existing unpaid EMIs without payment or fee history.'); this.loadProducts(); this.newProduct(); }, error: error => this.message.set(error.error?.message ?? 'Could not save product settings.') });
   }
   money(value: number): string { return `₹ ${value.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`; }
 }

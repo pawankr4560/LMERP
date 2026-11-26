@@ -16,7 +16,7 @@ public sealed class EmiRepaymentService(LoanDbContext db, IBusinessClock busines
         var today = BusinessToday();
         var schedules = await db.EmiSchedules.AsNoTracking().Include(s => s.LoanApplication).ThenInclude(l => l!.Customer)
             .Include(s => s.LateFees).Include(s => s.Payments).ThenInclude(p => p.Allocations)
-            .Where(s => s.Status != "Paid")
+            .Where(s => s.Status != "Paid" || s.LateFees.Any(f => f.Status == "Pending"))
             .OrderBy(s => s.DueDate).ToListAsync(ct);
         return schedules.Where(s => DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(s.DueDate, BusinessTimeZone()).DateTime) < today)
             .Select(ToResponse).Where(x => x.TotalOutstanding > 0).ToArray();
@@ -25,7 +25,10 @@ public sealed class EmiRepaymentService(LoanDbContext db, IBusinessClock busines
     public async Task<OverdueEmiResponse?> GetDetailsAsync(int scheduleId, CancellationToken ct)
     {
         var schedule = await LoadSchedule(scheduleId, ct);
-        return schedule is null ? null : ToResponse(schedule);
+        if (schedule is null) return null;
+        await ProcessScheduleFeesAsync(schedule, ct);
+        await db.SaveChangesAsync(ct);
+        return ToResponse(schedule);
     }
 
     public async Task<IReadOnlyList<EmiPaymentResponse>> GetPaymentsAsync(int scheduleId, CancellationToken ct)
@@ -61,6 +64,23 @@ public sealed class EmiRepaymentService(LoanDbContext db, IBusinessClock busines
         product.LateFeeRate = request.LateFeeRate; product.LateFeeCalculationType = request.LateFeeCalculationType;
         product.GracePeriodDays = request.GracePeriodDays; product.MaximumLateFeeAmount = request.MaximumLateFeeAmount; product.MaximumPenaltyDays = request.MaximumPenaltyDays;
         if (product.Id == 0) db.LoanProducts.Add(product);
+
+        // Product settings apply to existing EMIs only while they are still unpaid and have no payment/fee history.
+        var unstartedSchedules = await db.EmiSchedules
+            .Where(schedule => schedule.LoanApplication!.Product == name
+                && schedule.Status != "Paid"
+                && !schedule.Payments.Any()
+                && !schedule.LateFees.Any())
+            .ToListAsync(ct);
+        foreach (var schedule in unstartedSchedules)
+        {
+            schedule.IsLateFeeApplicable = product.IsLateFeeApplicable;
+            schedule.LateFeeRate = product.LateFeeRate;
+            schedule.LateFeeCalculationType = product.LateFeeCalculationType;
+            schedule.GracePeriodDays = product.GracePeriodDays;
+            schedule.MaximumLateFeeAmount = product.MaximumLateFeeAmount;
+            schedule.MaximumPenaltyDays = product.MaximumPenaltyDays;
+        }
         await db.SaveChangesAsync(ct);
         return ToResponse(product);
     }
@@ -74,6 +94,8 @@ public sealed class EmiRepaymentService(LoanDbContext db, IBusinessClock busines
             if (replay is not null) return ToPaymentResponse(replay);
         }
         var schedule = await LoadSchedule(scheduleId, ct) ?? throw new NotFoundException("EMI schedule was not found.");
+        await ProcessScheduleFeesAsync(schedule, ct);
+        await db.SaveChangesAsync(ct);
         var outstandingEmi = EmiOutstanding(schedule);
         var fees = schedule.LateFees.Where(f => f.Status == "Pending").OrderBy(f => f.PenaltyDate).ToList();
         var outstandingFees = fees.ToDictionary(f => f, f => Math.Max(0m, f.PenaltyAmount - f.PaymentAllocations.Sum(a => a.Amount)));
@@ -141,28 +163,11 @@ public sealed class EmiRepaymentService(LoanDbContext db, IBusinessClock busines
 
     public async Task<int> ProcessDailyFeesAsync(CancellationToken ct)
     {
-        var today = BusinessToday();
         var schedules = await db.EmiSchedules.Include(s => s.LoanApplication).Include(s => s.LateFees).ThenInclude(f => f.PaymentAllocations)
             .Where(s => s.Status != "Paid").ToListAsync(ct);
         var created = 0;
         foreach (var schedule in schedules)
-        {
-            var outstanding = await EmiOutstandingAsync(schedule.Id, ct);
-            if (outstanding <= 0)
-            {
-                var openFees = schedule.LateFees.Sum(f => RepaymentBalances.OpenLateFee(f.PenaltyAmount, f.PaymentAllocations.Sum(a => a.Amount), f.Status));
-                schedule.Status = openFees == 0 ? "Paid" : "Partially paid";
-                continue;
-            }
-            var dueDate = DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(schedule.DueDate, BusinessTimeZone()).DateTime);
-            if (dueDate < today) schedule.Status = "Overdue";
-            if (schedule.IsLateFeeExempt || !schedule.IsLateFeeApplicable || schedule.LateFeeRate <= 0 || dueDate >= today) continue;
-            var existing = (await db.EmiLateFees.Where(f => f.EmiScheduleId == schedule.Id).ToListAsync(ct)).ToDictionary(f => f.PenaltyDate, f => f.PenaltyAmount);
-            var feesToAdd = LateFeeCalculator.Calculate(schedule.EmiAmount, schedule.LateFeeRate, dueDate, schedule.GracePeriodDays,
-                today, outstanding, schedule.IsLateFeeExempt, schedule.MaximumLateFeeAmount, schedule.MaximumPenaltyDays, existing);
-            db.EmiLateFees.AddRange(feesToAdd.Select(fee => new EmiLateFee { EmiScheduleId = schedule.Id, PenaltyDate = fee.PenaltyDate, BaseAmount = fee.BaseAmount, PenaltyRate = fee.Rate, PenaltyAmount = fee.Amount }));
-            created += feesToAdd.Count;
-        }
+            created += await ProcessScheduleFeesAsync(schedule, ct);
         await db.SaveChangesAsync(ct);
         return created;
     }
@@ -176,6 +181,52 @@ public sealed class EmiRepaymentService(LoanDbContext db, IBusinessClock busines
         return Math.Max(0m, balance);
     }
     private static decimal EmiOutstanding(EmiSchedule s) => Math.Max(0m, s.EmiAmount - s.Payments.SelectMany(p => p.Allocations).Where(a => a.Component == "Emi").Sum(a => a.Amount));
+
+    private async Task<int> ProcessScheduleFeesAsync(EmiSchedule schedule, CancellationToken ct)
+    {
+        var outstanding = await EmiOutstandingAsync(schedule.Id, ct);
+        if (outstanding <= 0)
+        {
+            var openFees = schedule.LateFees.Sum(f => RepaymentBalances.OpenLateFee(f.PenaltyAmount, f.PaymentAllocations.Sum(a => a.Amount), f.Status));
+            schedule.Status = openFees == 0 ? "Paid" : "Partially paid";
+            return 0;
+        }
+
+        var today = BusinessToday();
+        var dueDate = DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(schedule.DueDate, BusinessTimeZone()).DateTime);
+        if (dueDate < today) schedule.Status = "Overdue";
+        if (schedule.IsLateFeeExempt || !schedule.IsLateFeeApplicable || schedule.LateFeeRate <= 0 || dueDate >= today)
+            return 0;
+
+        var existingFees = schedule.LateFees.ToDictionary(fee => fee.PenaltyDate, fee => fee.PenaltyAmount);
+        var feesToAdd = LateFeeCalculator.Calculate(
+            schedule.EmiAmount,
+            schedule.LateFeeRate,
+            dueDate,
+            schedule.GracePeriodDays,
+            today,
+            outstanding,
+            schedule.IsLateFeeExempt,
+            schedule.MaximumLateFeeAmount,
+            schedule.MaximumPenaltyDays,
+            existingFees);
+
+        foreach (var fee in feesToAdd)
+        {
+            var entity = new EmiLateFee
+            {
+                EmiScheduleId = schedule.Id,
+                PenaltyDate = fee.PenaltyDate,
+                BaseAmount = fee.BaseAmount,
+                PenaltyRate = fee.Rate,
+                PenaltyAmount = fee.Amount
+            };
+            schedule.LateFees.Add(entity);
+            db.EmiLateFees.Add(entity);
+        }
+
+        return feesToAdd.Count;
+    }
     private static EmiPaymentResponse ToPaymentResponse(EmiPayment payment) => new(payment.Id, payment.EmiScheduleId, payment.Amount, payment.ReceivedAt, payment.Method, payment.Reference, payment.Allocations.Select(a => new PaymentAllocationResponse(a.Component, a.Amount, a.EmiLateFeeId)).ToArray());
     private OverdueEmiResponse ToResponse(EmiSchedule s)
     {

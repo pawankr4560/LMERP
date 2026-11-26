@@ -19,7 +19,11 @@ export class AuthService {
   constructor() { this.scheduleExpiry(); }
 
   hasRole(...roles: string[]): boolean {
-    return this.sessionIsValid() && roles.some(role => this.roles().includes(role));
+    if (!this.sessionIsValid()) return false;
+    const assignedRoles = new Set(this.roles());
+    if (assignedRoles.has('Admin')) assignedRoles.add('Administrator');
+    if (assignedRoles.has('Manager')) assignedRoles.add('CollectionsManager');
+    return roles.some(role => assignedRoles.has(role));
   }
 
   login(email: string, password: string): Observable<LoginResponse> {

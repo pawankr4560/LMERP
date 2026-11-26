@@ -27,4 +27,5 @@ public interface ILoanManagementRepository
     Task<LoanProduct?> GetLoanProductAsync(string name, CancellationToken cancellationToken);
     Task<IReadOnlyList<EmiSchedule>> GetEmiScheduleAsync(int loanId, CancellationToken cancellationToken);
     Task<Contracts.DashboardSummary> GetDashboardSummaryAsync(CancellationToken cancellationToken);
+    Task<IReadOnlyList<Contracts.DashboardTransactionResponse>> GetRecentDashboardTransactionsAsync(CancellationToken cancellationToken);
 }

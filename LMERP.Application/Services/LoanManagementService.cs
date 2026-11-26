@@ -175,6 +175,7 @@ public sealed class LoanManagementService(ILoanManagementRepository repository, 
     }
 
     public Task<DashboardSummary> GetDashboardSummaryAsync(CancellationToken cancellationToken) => repository.GetDashboardSummaryAsync(cancellationToken);
+    public Task<IReadOnlyList<DashboardTransactionResponse>> GetRecentDashboardTransactionsAsync(CancellationToken cancellationToken) => repository.GetRecentDashboardTransactionsAsync(cancellationToken);
 
     private static CustomerResponse ToResponse(Customer customer) => new(customer.Id, customer.FullName, customer.Phone, customer.Email, customer.City, customer.Status, customer.CreatedAt, customer.LoanApplications.Count, Convert.ToBase64String(customer.RowVersion));
     private static LoanResponse ToResponse(LoanApplication loan) => new(loan.Id, loan.ApplicationNumber, loan.CustomerId, loan.Customer?.FullName ?? string.Empty, loan.Product, loan.RequestedAmount, loan.TenureMonths, loan.InterestRate, loan.IsFlatInterest, loan.Status, loan.AppliedAt, Convert.ToBase64String(loan.RowVersion));

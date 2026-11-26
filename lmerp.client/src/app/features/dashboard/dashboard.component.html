@@ -1,40 +1,46 @@
 <div class="page-heading">
-  <div><p class="eyebrow">{{ todayLabel }}</p><h1>Good morning, Alex <span>✳</span></h1><p class="subheading">Here’s what’s happening with your portfolio today.</p></div>
-  <div class="heading-actions"><button class="button button-light" type="button">⇩ <span>Export report</span></button><a class="button button-primary" routerLink="/loans/new">＋ <span>New application</span></a></div>
+  <div><p class="eyebrow">{{ todayLabel }}</p><h1>Loan portfolio overview <span>✳</span></h1><p class="subheading">Live summary of your loan portfolio.</p></div>
+  <div class="heading-actions"><a class="button button-primary" routerLink="/loans/new">＋ <span>New application</span></a></div>
 </div>
 
+@if (loadError()) { <p class="subheading" role="status">{{ loadError() }}</p> }
 <section class="stat-grid" aria-label="Portfolio summary">
   @for (stat of stats(); track stat.label) {
-    <article class="stat-card"><div class="stat-top"><span>{{ stat.label }}</span><span class="stat-icon" [class]="'stat-icon '+stat.tone">{{ stat.icon }}</span></div><strong class="stat-value">{{ stat.value }}</strong><div class="stat-foot"><span class="trend" [class.down]="stat.tone === 'orange'">{{ stat.change }}</span><span>{{ stat.note }}</span><span class="stat-spark">⌁⌁</span></div></article>
+    <article class="stat-card"><div class="stat-top"><span>{{ stat.label }}</span><span class="stat-icon" [class]="'stat-icon '+stat.tone">{{ stat.icon }}</span></div><strong class="stat-value">{{ stat.value }}</strong><div class="stat-foot"><span>{{ stat.note }}</span></div></article>
   }
 </section>
 
 <section class="middle-grid">
   <article class="panel disbursement-panel">
-    <div class="panel-heading"><div><h2>Disbursement overview</h2><p>Illustrative monthly chart · API integration pending</p></div><button class="select-button" type="button">This year <span>⌄</span></button></div>
-    <div class="chart-legend"><span><i class="legend-primary"></i>Disbursed</span><span><i class="legend-secondary"></i>Collected</span></div>
-    <div class="chart-area"><div class="y-labels"><span>₹ 1.0 Cr</span><span>₹ 75 L</span><span>₹ 50 L</span><span>₹ 25 L</span><span>₹ 0</span></div><div class="chart-grid">
+    <div class="panel-heading"><div><h2>Applications by month</h2><p>Applications created in the last 12 months</p></div></div>
+    <div class="chart-legend"><span><i class="legend-primary"></i>Applications</span></div>
+    <div class="chart-area"><div class="y-labels"><span>Most</span><span></span><span></span><span></span><span>0</span></div><div class="chart-grid">
       <div class="grid-line"></div><div class="grid-line"></div><div class="grid-line"></div><div class="grid-line"></div><div class="grid-line"></div>
-      <div class="bars">@for (month of months; track month.label) {<div class="month-bars"><div class="bar-group"><span class="bar collected" [style.height.%]="month.second"></span><span class="bar disbursed" [style.height.%]="month.value"></span></div><small>{{ month.label }}</small></div>}</div>
+      <div class="bars">@for (month of monthlyApplications(); track month.year + '-' + month.month) {<div class="month-bars"><div class="bar-group"><span class="bar disbursed" [style.height.%]="month.height" [attr.title]="month.count + ' applications'"></span></div><small>{{ month.label }}</small></div>}</div>
     </div></div>
   </article>
   <article class="panel portfolio-panel">
-    <div class="panel-heading"><div><h2>Portfolio health</h2><p>Loan distribution by status</p></div><button class="dots-button" type="button" aria-label="More options">···</button></div>
-    <div class="donut-wrap"><div class="donut"><div class="donut-center"><strong>1,284</strong><small>Total loans</small></div></div></div>
-    <div class="portfolio-legend"><div><i class="legend-active"></i><span>Active</span><strong>68%</strong></div><div><i class="legend-closed"></i><span>Closed</span><strong>21%</strong></div><div><i class="legend-overdue"></i><span>Overdue</span><strong>11%</strong></div></div>
+    <div class="panel-heading"><div><h2>Portfolio status</h2><p>Loan applications by current status</p></div></div>
+    <div class="portfolio-status-list">@for (item of portfolio(); track item.label) {<div class="portfolio-status"><div><i [class]="item.tone"></i><span>{{ item.label }}</span><strong>{{ item.count }}</strong></div><div class="status-track"><span [class]="item.tone" [style.width.%]="item.percent"></span></div></div>}</div>
+    @if (!loans().length) { <p class="empty-chart">No loan records available.</p> }
   </article>
 </section>
 
 <section class="bottom-grid">
   <article class="panel applications-panel">
-    <div class="panel-heading"><div><h2>Recent applications <span class="count-pill">8</span></h2><p>Sample applications · API integration pending</p></div><a class="text-link" routerLink="/loans">View all <span>→</span></a></div>
-    <div class="table-wrap"><table><thead><tr><th>APPLICANT</th><th>LOAN TYPE</th><th>AMOUNT</th><th>STATUS</th><th></th></tr></thead><tbody>
-      @for (item of applications; track item.id) {<tr><td><div class="person-cell"><span class="person-avatar" [class]="'person-avatar '+item.color">{{ item.initials }}</span><span><strong>{{ item.name }}</strong><small>{{ item.id }}</small></span></div></td><td>{{ item.type }}</td><td class="amount-cell">{{ item.amount }}</td><td><span class="status" [class]="'status '+item.tone"><i></i>{{ item.status }}</span></td><td><button class="row-menu" aria-label="Application actions">···</button></td></tr>}
+    <div class="panel-heading"><div><h2>Recent applications <span class="count-pill">{{ applications().length }}</span></h2><p>Latest records from the loan register</p></div><a class="text-link" routerLink="/loans">View all <span>→</span></a></div>
+    <div class="table-wrap"><table><thead><tr><th>APPLICANT</th><th>LOAN TYPE</th><th>AMOUNT</th><th>STATUS</th><th>APPLIED</th></tr></thead><tbody>
+      @for (item of applications(); track item.id) {<tr><td><div class="person-cell"><span class="person-avatar">{{ initials(item.customerName) }}</span><span><strong>{{ item.customerName }}</strong><small>{{ item.applicationNumber }}</small></span></div></td><td>{{ item.product }}</td><td class="amount-cell">{{ money(item.requestedAmount) }}</td><td><span class="status" [class]="'status '+statusTone(item.status)"><i></i>{{ item.status }}</span></td><td>{{ date(item.appliedAt) }}</td></tr>}
+      @empty {<tr><td colspan="5" class="empty-table">No loan applications found.</td></tr>}
     </tbody></table></div>
   </article>
   <article class="panel transactions-panel">
-    <div class="panel-heading"><div><h2>Recent transactions</h2><p>Latest activity across your portfolio</p></div><button class="dots-button" type="button" aria-label="More options">···</button></div>
-    <div class="transaction-list">@for (item of transactions; track item.name) {<div class="transaction"><span class="transaction-avatar" [class]="'transaction-avatar '+item.kind">{{ item.initials }}</span><div class="transaction-copy"><strong>{{ item.name }}</strong><small>{{ item.detail }}</small></div><div class="transaction-value"><strong>{{ item.amount }}</strong><small>{{ item.time }}</small></div></div>}</div>
-    <a class="all-transactions" routerLink="/repayments">View all transactions <span>→</span></a>
+    <div class="panel-heading"><div><h2>Recent transactions</h2><p>Latest recorded disbursements and repayments</p></div></div>
+    <div class="transaction-list">
+      @for (item of transactions(); track item.type + '-' + item.id) {
+        <div class="transaction"><span class="transaction-avatar" [class]="'transaction-avatar '+(item.type === 'Disbursement' ? 'out' : 'in')">{{ initials(item.customerName) }}</span><div class="transaction-copy"><strong>{{ item.customerName }}</strong><small>{{ transactionDetail(item) }}</small></div><div class="transaction-value"><strong>₹ {{ item.amount.toLocaleString('en-IN', { maximumFractionDigits: 2 }) }}</strong><small>{{ time(item.occurredAt) }}</small></div></div>
+      } @empty { <p class="empty-chart">No transactions have been recorded yet.</p> }
+    </div>
+    <a class="all-transactions" routerLink="/repayments">View repayment activity <span>→</span></a>
   </article>
 </section>

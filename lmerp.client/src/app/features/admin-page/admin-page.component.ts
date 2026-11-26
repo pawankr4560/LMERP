@@ -3,7 +3,7 @@ import { CommonModule } from '@angular/common';
 import { FormControl, FormRecord, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ActivatedRoute } from '@angular/router';
 import { catchError, of } from 'rxjs';
-import { CustomerDto, LoanApiService, LoanDto, LoanStatus } from '../../core/api/loan-api.service';
+import { CustomerDto, LoanApiService, LoanDto, LoanStatus, OverdueEmiDto } from '../../core/api/loan-api.service';
 import { AuthService } from '../../core/auth/auth.service';
 
 interface PageRow { [key: string]: string; }
@@ -42,9 +42,8 @@ const definitions: Record<string, PageDefinition> = {
   },
   collections:{
     title:'Collections',description:'Prioritize upcoming dues and follow recovery progress.',action:'Log collection',
-    columns:[{key:'customer',label:'CUSTOMER / LOAN'},{key:'due',label:'DUE SINCE'},{key:'overdue',label:'OVERDUE'},{key:'owner',label:'COLLECTION OWNER'},{key:'status',label:'STATUS'}],
-    rows:[{customer:'Meera Iyer|LN-2025-0590',due:'17 Nov 2025',overdue:'₹ 16,800',owner:'Rohan Desai',status:'Contacted'},{customer:'Aarav Shah|LN-2025-0612',due:'15 Nov 2025',overdue:'₹ 24,000',owner:'Ananya Rao',status:'Promise to pay'},{customer:'Kabir Singh|LN-2025-0488',due:'12 Nov 2025',overdue:'₹ 9,400',owner:'Rohan Desai',status:'Escalated'},{customer:'Tara Menon|LN-2025-0421',due:'10 Nov 2025',overdue:'₹ 32,500',owner:'Dev Malhotra',status:'Contacted'}],
-    fields:[{key:'loan',label:'Loan ID'},{key:'customer',label:'Customer'},{key:'note',label:'Collection note'},{key:'status',label:'Status',type:'select',options:['Contacted','Promise to pay','Escalated','Resolved']}]
+    columns:[{key:'customer',label:'CUSTOMER / LOAN'},{key:'due',label:'DUE DATE'},{key:'installment',label:'INSTALLMENT'},{key:'amount',label:'TOTAL DUE'},{key:'status',label:'STATUS'}],
+    rows:[], fields:[]
   },
   reports:{
     title:'Reports',description:'Explore portfolio performance and export operational reports.',action:'Generate report',
@@ -103,7 +102,7 @@ export class AdminPageComponent {
   readonly showingStart = computed(() => this.filteredRows().length ? this.pageIndex() * 6 + 1 : 0);
   readonly showingEnd = computed(() => Math.min((this.pageIndex() + 1) * 6, this.filteredRows().length));
   readonly pages = computed(() => Array.from({ length: this.pageCount() }, (_, index) => index));
-  readonly attentionCount = computed(() => this.rows().filter(row => ['Under review','Overdue','Documents needed','Pending','Invited'].includes(row['status'])).length);
+  readonly attentionCount = computed(() => this.rows().filter(row => ['Under review','Overdue','Late fee due','Partially paid','Documents needed','Pending','Invited'].includes(row['status'])).length);
   form = new FormRecord<FormControl<string>>({});
   private readonly api = inject(LoanApiService);
   private readonly auth = inject(AuthService);
@@ -111,7 +110,7 @@ export class AdminPageComponent {
   constructor() {
     this.route.data.subscribe(data => {
       this.section.set(String(data['section'] ?? 'customers'));
-      const hasBackend = ['customers', 'loans'].includes(this.section());
+      const hasBackend = ['customers', 'loans', 'collections'].includes(this.section());
       this.rows.set(hasBackend ? [] : [...this.definition().rows]);
       this.previewMode.set(!hasBackend);
       this.statusFilter.set('All statuses'); this.pageIndex.set(0); this.sortKey.set('');
@@ -275,6 +274,10 @@ export class AdminPageComponent {
       this.api.loans().pipe(catchError(error => { this.notify(this.errorMessage(error)); return of(null); })).subscribe(loans => {
         if (loans) { this.rows.set(loans.map(loan => this.loanRow(loan))); this.previewMode.set(false); }
       });
+    } else if (this.section() === 'collections') {
+      this.api.overdueEmis().pipe(catchError(error => { this.rows.set([]); this.previewMode.set(false); this.notify(this.errorMessage(error)); return of(null); })).subscribe(items => {
+        if (items) { this.rows.set(items.map(item => this.collectionRow(item))); this.previewMode.set(false); }
+      });
     }
   }
   private customerRow(customer: CustomerDto): PageRow {
@@ -282,6 +285,14 @@ export class AdminPageComponent {
   }
   private loanRow(loan: LoanDto): PageRow {
     return { id: String(loan.id), rowVersion: loan.rowVersion, customerId: String(loan.customerId), customerName: loan.customerName, application: `${loan.customerName}|${loan.applicationNumber}`, applicationNumber: loan.applicationNumber, product: loan.product, requestedAmount: String(loan.requestedAmount), tenureMonths: String(loan.tenureMonths), interestRate: String(loan.interestRate), isFlatInterest: String(loan.isFlatInterest), amount: `₹ ${loan.requestedAmount.toLocaleString('en-IN')}`, date: new Date(loan.appliedAt).toLocaleDateString('en-IN'), status: loan.status };
+  }
+  private collectionRow(item: OverdueEmiDto): PageRow {
+    const status = item.emiOutstanding <= 0 ? 'Late fee due' : item.status === 'Partially paid' ? 'Partially paid' : 'Overdue';
+    return { id: String(item.emiScheduleId), customer: `${item.customerName}|${item.applicationNumber}`, due: new Date(item.dueDate).toLocaleDateString('en-IN'), installment: `#${item.installmentNumber}`, amount: `₹ ${item.totalOutstanding.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, status };
+  }
+  collectionTotal(): string {
+    const total = this.rows().reduce((sum, row) => sum + Number((row['amount'] ?? '').replace(/[^\d.]/g, '')), 0);
+    return `₹ ${total.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   }
   remove(row: PageRow): void {
     const name = this.primary(row[this.definition().columns[0].key] ?? 'this record');

@@ -15,4 +15,8 @@ public sealed class DashboardController(ILoanManagementService service) : Contro
     [HttpGet("summary")]
     public async Task<ActionResult<BaseResponse<DashboardSummary>>> GetSummary(CancellationToken cancellationToken) =>
         Ok(BaseResponse<DashboardSummary>.Succeeded(await service.GetDashboardSummaryAsync(cancellationToken)));
+
+    [HttpGet("recent-transactions")]
+    public async Task<ActionResult<BaseResponse<IReadOnlyList<DashboardTransactionResponse>>>> GetRecentTransactions(CancellationToken cancellationToken) =>
+        Ok(BaseResponse<IReadOnlyList<DashboardTransactionResponse>>.Succeeded(await service.GetRecentDashboardTransactionsAsync(cancellationToken)));
 }

@@ -6,7 +6,7 @@ using Microsoft.Data.SqlClient;
 
 namespace LMERP.Server.Middleware;
 
-public sealed class ApiExceptionMiddleware(RequestDelegate next, ILogger<ApiExceptionMiddleware> logger)
+public sealed class ApiExceptionMiddleware(RequestDelegate next, ILogger<ApiExceptionMiddleware> logger, IWebHostEnvironment environment)
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
@@ -28,7 +28,10 @@ public sealed class ApiExceptionMiddleware(RequestDelegate next, ILogger<ApiExce
             context.Response.Clear();
             context.Response.StatusCode = status;
             context.Response.ContentType = "application/json";
-            await JsonSerializer.SerializeAsync(context.Response.Body, BaseResponse<object>.Failed(message), JsonOptions, context.RequestAborted);
+            var responseMessage = environment.IsDevelopment() && status == StatusCodes.Status500InternalServerError
+                ? $"{message} {exception.Message}"
+                : message;
+            await JsonSerializer.SerializeAsync(context.Response.Body, BaseResponse<object>.Failed(responseMessage), JsonOptions, context.RequestAborted);
         }
     }
 }

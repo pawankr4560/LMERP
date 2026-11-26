@@ -76,6 +76,14 @@ namespace LMERP.Server
                         var manager = context.HttpContext.RequestServices.GetRequiredService<UserManager<LoanUser>>();
                         var user = await manager.FindByIdAsync(id.ToString());
                         if (user is null || !user.IsActive || !string.Equals(stamp, user.SecurityStamp, StringComparison.Ordinal)) context.Fail("The token has been revoked.");
+                        else if (context.Principal?.Identity is ClaimsIdentity identity)
+                        {
+                            // Older development accounts were assigned these role names; expose their canonical roles to API authorization too.
+                            if (identity.HasClaim(ClaimTypes.Role, "Admin") && !identity.HasClaim(ClaimTypes.Role, Roles.Administrator))
+                                identity.AddClaim(new Claim(ClaimTypes.Role, Roles.Administrator));
+                            if (identity.HasClaim(ClaimTypes.Role, "Manager") && !identity.HasClaim(ClaimTypes.Role, Roles.CollectionsManager))
+                                identity.AddClaim(new Claim(ClaimTypes.Role, Roles.CollectionsManager));
+                        }
                     },
                     OnChallenge = async context =>
                     {

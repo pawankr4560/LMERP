@@ -18,6 +18,7 @@ export interface LateFeeDto { id: number; penaltyDate: string; baseAmount: numbe
 export interface OverdueEmiDto { emiScheduleId: number; loanApplicationId: number; applicationNumber: string; customerName: string; installmentNumber: number; dueDate: string; emiAmount: number; emiOutstanding: number; lateFeesOutstanding: number; totalOutstanding: number; status: string; lateFees: LateFeeDto[]; payments: EmiPaymentDto[]; }
 export interface RepaymentSummaryDto { overdueInstallmentCount: number; emiOutstanding: number; lateFeesOutstanding: number; totalOutstanding: number; }
 export interface DashboardSummaryDto { customerCount: number; totalLoans: number; activeLoans: number; pendingApplications: number; totalDisbursed: number; outstandingAmount: number; overdueLoans: number; overdueAmount: number; }
+export interface DashboardTransactionDto { id: number; customerName: string; applicationNumber: string; type: 'Disbursement' | 'Repayment'; amount: number; occurredAt: string; method?: string; }
 
 @Injectable({ providedIn: 'root' })
 export class LoanApiService {
@@ -30,6 +31,7 @@ export class LoanApiService {
   products(): Observable<LoanProductDto[]> { return this.http.get<ApiEnvelope<LoanProductDto[]>>('/api/repayments/products').pipe(map(response => response.data ?? [])); }
   loanProducts(): Observable<LoanProductDto[]> { return this.products(); }
   overdueEmis(): Observable<OverdueEmiDto[]> { return this.http.get<ApiEnvelope<OverdueEmiDto[]>>('/api/repayments/overdue').pipe(map(response => response.data ?? [])); }
+  emiDetails(scheduleId: number): Observable<OverdueEmiDto> { return this.http.get<ApiEnvelope<OverdueEmiDto>>(`/api/repayments/emi/${scheduleId}`).pipe(map(response => response.data!)); }
   repaymentSummary(): Observable<RepaymentSummaryDto> { return this.http.get<ApiEnvelope<RepaymentSummaryDto>>('/api/repayments/summary').pipe(map(response => response.data!)); }
   collectEmiPayment(scheduleId: number, payment: { amount: number; method: string; reference?: string }): Observable<EmiPaymentDto> { return this.http.post<ApiEnvelope<EmiPaymentDto>>(`/api/repayments/emi/${scheduleId}/payments`, payment).pipe(map(response => response.data!)); }
   waiveLateFee(feeId: number, reason: string): Observable<boolean> { return this.http.post<ApiEnvelope<boolean>>(`/api/repayments/late-fees/${feeId}/waive`, { reason }).pipe(map(response => response.data ?? false)); }
@@ -42,4 +44,5 @@ export class LoanApiService {
   rejectLoan(id: number, reason: string): Observable<LoanDto> { return this.http.post<ApiEnvelope<LoanDto>>(`/api/loans/${id}/reject`, { reason }).pipe(map(response => response.data!)); }
   deleteLoan(id: number): Observable<void> { return this.http.delete<ApiEnvelope<boolean>>(`/api/loans/${id}`).pipe(map(() => undefined)); }
   dashboardSummary(): Observable<DashboardSummaryDto> { return this.http.get<ApiEnvelope<DashboardSummaryDto>>('/api/dashboard/summary').pipe(map(response => response.data!)); }
+  recentDashboardTransactions(): Observable<DashboardTransactionDto[]> { return this.http.get<ApiEnvelope<DashboardTransactionDto[]>>('/api/dashboard/recent-transactions').pipe(map(response => response.data ?? [])); }
 }

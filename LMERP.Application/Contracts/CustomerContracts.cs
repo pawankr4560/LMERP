@@ -46,3 +46,4 @@ public sealed class LoanRejectionRequest
 }
 
 public sealed record DashboardSummary(int CustomerCount, int TotalLoans, int ActiveLoans, int PendingApplications, decimal TotalDisbursed, decimal OutstandingAmount, int OverdueLoans, decimal OverdueAmount);
+public sealed record DashboardTransactionResponse(int Id, string CustomerName, string ApplicationNumber, string Type, decimal Amount, DateTimeOffset OccurredAt, string? Method);

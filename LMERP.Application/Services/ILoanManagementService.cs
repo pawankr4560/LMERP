@@ -18,4 +18,5 @@ public interface ILoanManagementService
     Task<OperationResult<bool>> DeleteLoanAsync(int id, CancellationToken cancellationToken);
     Task<OperationResult<IReadOnlyList<EmiScheduleResponse>>> GetEmiScheduleAsync(int id, CancellationToken cancellationToken);
     Task<DashboardSummary> GetDashboardSummaryAsync(CancellationToken cancellationToken);
+    Task<IReadOnlyList<DashboardTransactionResponse>> GetRecentDashboardTransactionsAsync(CancellationToken cancellationToken);
 }
