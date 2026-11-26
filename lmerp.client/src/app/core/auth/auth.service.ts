@@ -1,7 +1,7 @@
 import { HttpClient } from '@angular/common/http';
 import { Injectable, inject, signal } from '@angular/core';
 import { Router } from '@angular/router';
-import { map, Observable, tap } from 'rxjs';
+import { catchError, finalize, map, Observable, of, shareReplay, tap, throwError } from 'rxjs';
 
 interface LoginResponse { accessToken: string; expiresAt: string; fullName: string; email: string; roles: string[]; }
 interface ApiEnvelope<T> { success: boolean; message: string; data: T | null; errors: string[]; }
@@ -15,8 +15,9 @@ export class AuthService {
   readonly roles = signal<string[]>(JSON.parse(sessionStorage.getItem('northstar.roles') ?? '[]') as string[]);
   readonly accessToken = (): string | null => this.sessionIsValid() ? sessionStorage.getItem('northstar.accessToken') : null;
   private expiryTimer: ReturnType<typeof setTimeout> | undefined;
+  private refreshRequest?: Observable<LoginResponse>;
 
-  constructor() { this.scheduleExpiry(); }
+  constructor() { this.scheduleRefresh(); }
 
   hasRole(...roles: string[]): boolean {
     if (!this.sessionIsValid()) return false;
@@ -27,21 +28,48 @@ export class AuthService {
   }
 
   login(email: string, password: string): Observable<LoginResponse> {
-    return this.http.post<ApiEnvelope<LoginResponse>>('/api/auth/login', { email, password }).pipe(map(response => response.data!), tap(response => {
-      sessionStorage.setItem('northstar.accessToken', response.accessToken);
-      sessionStorage.setItem('northstar.displayName', response.fullName);
-      sessionStorage.setItem('northstar.roles', JSON.stringify(response.roles));
-      sessionStorage.setItem('northstar.expiresAt', response.expiresAt);
-      this.displayName.set(response.fullName);
-      this.roles.set(response.roles);
-      this.isAuthenticated.set(true);
-      this.scheduleExpiry();
-    }));
+    return this.http.post<ApiEnvelope<LoginResponse>>('/api/auth/login', { email, password }, { withCredentials: true }).pipe(
+      map(response => response.data!),
+      tap(response => this.applySession(response))
+    );
+  }
+
+  refreshAccessToken(): Observable<LoginResponse> {
+    if (this.refreshRequest) return this.refreshRequest;
+    this.refreshRequest = this.http.post<ApiEnvelope<LoginResponse>>('/api/auth/refresh', {}, { withCredentials: true }).pipe(
+      map(response => response.data!),
+      tap(response => this.applySession(response)),
+      catchError(error => { this.clearSession(); return throwError(() => error); }),
+      finalize(() => { this.refreshRequest = undefined; }),
+      shareReplay({ bufferSize: 1, refCount: false })
+    );
+    return this.refreshRequest;
+  }
+
+  ensureAuthenticated(): Observable<boolean> {
+    if (this.accessToken()) return of(true);
+    return this.refreshAccessToken().pipe(map(() => true), catchError(() => of(false)));
   }
 
   logout(): void {
+    this.http.post('/api/auth/logout', {}, { withCredentials: true }).pipe(catchError(() => of(null))).subscribe();
+    this.expireSession();
+  }
+
+  expireSession(): void {
     this.clearSession();
     void this.router.navigateByUrl('/login');
+  }
+
+  private applySession(response: LoginResponse): void {
+    sessionStorage.setItem('northstar.accessToken', response.accessToken);
+    sessionStorage.setItem('northstar.displayName', response.fullName);
+    sessionStorage.setItem('northstar.roles', JSON.stringify(response.roles));
+    sessionStorage.setItem('northstar.expiresAt', response.expiresAt);
+    this.displayName.set(response.fullName);
+    this.roles.set(response.roles);
+    this.isAuthenticated.set(true);
+    this.scheduleRefresh();
   }
 
   private sessionIsValid(): boolean {
@@ -52,15 +80,19 @@ export class AuthService {
     return false;
   }
 
-  private scheduleExpiry(): void {
+  private scheduleRefresh(): void {
     if (this.expiryTimer) clearTimeout(this.expiryTimer);
     const expiresAt = sessionStorage.getItem('northstar.expiresAt');
-    const delay = expiresAt ? Date.parse(expiresAt) - Date.now() : 0;
-    if (delay > 0) this.expiryTimer = setTimeout(() => this.logout(), delay);
+    if (!expiresAt || !sessionStorage.getItem('northstar.accessToken')) return;
+    const remaining = Date.parse(expiresAt) - Date.now();
+    const refreshLead = Math.min(60_000, Math.max(1, Math.floor(remaining / 2)));
+    const delay = Math.max(0, remaining - refreshLead);
+    this.expiryTimer = setTimeout(() => this.refreshAccessToken().subscribe({ error: () => this.expireSession() }), delay);
   }
 
   private clearSession(): void {
     if (this.expiryTimer) clearTimeout(this.expiryTimer);
+    this.expiryTimer = undefined;
     sessionStorage.removeItem('northstar.accessToken');
     sessionStorage.removeItem('northstar.expiresAt');
     sessionStorage.removeItem('northstar.displayName');

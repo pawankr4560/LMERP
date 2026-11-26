@@ -26,6 +26,7 @@ public sealed class LoanRequest
     [Range(1, 360)] public int TenureMonths { get; init; }
     [Range(typeof(decimal), "0.01", "100.00")] public decimal InterestRate { get; init; }
     public bool IsFlatInterest { get; init; } = true;
+    public DateOnly? ApplicationDate { get; init; }
 }
 
 public sealed class LoanUpdateRequest

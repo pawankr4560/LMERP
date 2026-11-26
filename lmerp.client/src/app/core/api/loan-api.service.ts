@@ -8,7 +8,7 @@ export interface CustomerDto { id: number; fullName: string; phone: string; emai
 export interface CustomerWrite { fullName: string; phone: string; email?: string; city?: string; status: string; rowVersion?: string; }
 export type LoanStatus = 'Under review' | 'Documents needed' | 'Approved' | 'Rejected';
 export interface LoanDto { id: number; applicationNumber: string; customerId: number; customerName: string; product: string; requestedAmount: number; tenureMonths: number; interestRate: number; isFlatInterest: boolean; status: string; appliedAt: string; rowVersion: string; }
-export interface LoanWrite { customerId: number; product: string; requestedAmount: number; tenureMonths: number; interestRate: number; isFlatInterest: boolean; }
+export interface LoanWrite { customerId: number; product: string; requestedAmount: number; tenureMonths: number; interestRate: number; isFlatInterest: boolean; applicationDate: string; }
 export interface LoanUpdateWrite { product: string; requestedAmount: number; tenureMonths: number; interestRate: number; isFlatInterest: boolean; status: LoanStatus; rowVersion: string; }
 export interface LoanProductDto { id: number; name: string; isActive: boolean; isLateFeeApplicable: boolean; lateFeeRate: number; lateFeeCalculationType: string; gracePeriodDays: number; maximumLateFeeAmount?: number; maximumPenaltyDays?: number; }
 export interface LoanProductWrite { name: string; isActive: boolean; isLateFeeApplicable: boolean; lateFeeRate: number; lateFeeCalculationType: string; gracePeriodDays: number; maximumLateFeeAmount?: number; maximumPenaltyDays?: number; }

@@ -11,7 +11,7 @@ public sealed class JwtTokenIssuer(IConfiguration configuration, UserManager<Loa
 {
     public async Task<(string Token, DateTime ExpiresAt)> IssueAsync(LoanUser user)
     {
-        var expiresAt = DateTime.UtcNow.AddMinutes(configuration.GetValue("Jwt:AccessTokenMinutes", 60));
+        var expiresAt = DateTime.UtcNow.AddMinutes(configuration.GetValue("Jwt:AccessTokenMinutes", 15));
         var claims = new List<Claim>
         {
             new(JwtRegisteredClaimNames.Sub, user.Id.ToString()),

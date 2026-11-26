@@ -62,11 +62,14 @@ public sealed class LoanManagementService(ILoanManagementRepository repository, 
             return OperationResult<LoanResponse>.BadRequest("Select an active loan product.");
         var customer = await repository.GetActiveCustomerAsync(request.CustomerId, cancellationToken);
         if (customer is null) return OperationResult<LoanResponse>.BadRequest("Select an active customer before creating an application.");
+        var applicationDate = request.ApplicationDate ?? DateOnly.FromDateTime(DateTime.UtcNow);
+        var appliedAt = new DateTimeOffset(applicationDate.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc));
         var loan = new LoanApplication
         {
-            ApplicationNumber = $"LN-{DateTime.UtcNow:yyyy}-{await repository.GetNextApplicationNumberAsync(cancellationToken):D6}",
+            ApplicationNumber = $"LN-{applicationDate:yyyy}-{await repository.GetNextApplicationNumberAsync(cancellationToken):D6}",
             CustomerId = customer.Id, Customer = customer, Product = request.Product.Trim(), RequestedAmount = request.RequestedAmount,
-            TenureMonths = request.TenureMonths, InterestRate = request.InterestRate, IsFlatInterest = request.IsFlatInterest, Status = LoanStatuses.UnderReview
+            TenureMonths = request.TenureMonths, InterestRate = request.InterestRate, IsFlatInterest = request.IsFlatInterest,
+            AppliedAt = appliedAt, Status = LoanStatuses.UnderReview
         };
         await repository.AddLoanAsync(loan, cancellationToken);
         return OperationResult<LoanResponse>.Ok(ToResponse(loan), "Loan application created.");

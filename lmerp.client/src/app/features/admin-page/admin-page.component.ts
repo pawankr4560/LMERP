@@ -166,6 +166,7 @@ export class AdminPageComponent {
       if (field.key === 'tenureMonths') validators.push(Validators.min(1), Validators.max(360));
       controls.addControl(field.key, new FormControl('', { nonNullable: true, validators }));
     }
+    if (this.section() === 'loans') controls.addControl('applicationDate', new FormControl(this.todayDateValue(), { nonNullable: true, validators: [Validators.required] }));
     this.form = controls;
   }
   openDialog(): void { this.editingId.set(null); this.makeForm(); this.showDialog.set(true); }
@@ -230,7 +231,7 @@ export class AdminPageComponent {
       const loanTerms = { product: values['product'], requestedAmount: Number(values['requestedAmount']), tenureMonths: Number(values['tenureMonths']), interestRate: Number(values['interestRate']), isFlatInterest: values['interestType'] === 'Flat' };
       const request$ = this.editingId()
         ? this.api.updateLoan(this.editingId()!, { ...loanTerms, status: values['status'] as LoanStatus, rowVersion: values['rowVersion'] })
-        : this.api.createLoan({ ...loanTerms, customerId: Number(values['customerId']) });
+        : this.api.createLoan({ ...loanTerms, customerId: Number(values['customerId']), applicationDate: values['applicationDate'] });
       request$.subscribe({
         next: loan => {
           const row = this.loanRow(loan);
@@ -289,6 +290,10 @@ export class AdminPageComponent {
   private collectionRow(item: OverdueEmiDto): PageRow {
     const status = item.emiOutstanding <= 0 ? 'Late fee due' : item.status === 'Partially paid' ? 'Partially paid' : 'Overdue';
     return { id: String(item.emiScheduleId), customer: `${item.customerName}|${item.applicationNumber}`, due: new Date(item.dueDate).toLocaleDateString('en-IN'), installment: `#${item.installmentNumber}`, amount: `₹ ${item.totalOutstanding.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, status };
+  }
+  private todayDateValue(): string {
+    const today = new Date();
+    return `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
   }
   collectionTotal(): string {
     const total = this.rows().reduce((sum, row) => sum + Number((row['amount'] ?? '').replace(/[^\d.]/g, '')), 0);
