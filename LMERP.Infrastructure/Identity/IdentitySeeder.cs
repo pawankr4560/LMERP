@@ -9,7 +9,7 @@ namespace LMERP.Infrastructure.Identity;
 
 public static class IdentitySeeder
 {
-    private static readonly string[] Roles = [IdentityRoles.Administrator, IdentityRoles.LoanOfficer, IdentityRoles.CollectionsManager, IdentityRoles.Analyst];
+    private static readonly string[] Roles = [IdentityRoles.Administrator, IdentityRoles.LoanOfficer, IdentityRoles.CollectionsManager, IdentityRoles.Analyst, IdentityRoles.Customer];
 
     public static async Task SeedAsync(IServiceProvider services, IConfiguration configuration)
     {

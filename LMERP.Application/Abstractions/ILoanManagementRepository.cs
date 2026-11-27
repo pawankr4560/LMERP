@@ -19,7 +19,7 @@ public interface ILoanManagementRepository
     Task AddLoanAsync(LoanApplication loan, CancellationToken cancellationToken);
     Task<long> GetNextApplicationNumberAsync(CancellationToken cancellationToken);
     Task UpdateLoanAsync(LoanApplication loan, CancellationToken cancellationToken);
-    Task UpdateLoanAndAddEmiScheduleAsync(LoanApplication loan, IReadOnlyCollection<EmiSchedule> schedule, CancellationToken cancellationToken);
+    Task UpdateLoanAndAddEmiScheduleAsync(LoanApplication loan, IReadOnlyCollection<EmiSchedule> schedule, ILoanDocumentService documentService, CancellationToken cancellationToken);
     Task SoftDeleteLoanAsync(LoanApplication loan, CancellationToken cancellationToken);
     Task<bool> HasEmiScheduleAsync(int loanId, CancellationToken cancellationToken);
     Task<bool> LoanHasPaymentsAsync(int loanId, CancellationToken cancellationToken);

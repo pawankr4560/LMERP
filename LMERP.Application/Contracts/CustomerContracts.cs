@@ -14,7 +14,7 @@ public sealed class CustomerRequest
     public string? RowVersion { get; init; }
 }
 
-public sealed record LoanResponse(int Id, string ApplicationNumber, int CustomerId, string CustomerName, string Product, decimal RequestedAmount, int TenureMonths, decimal InterestRate, bool IsFlatInterest, string Status, DateTimeOffset AppliedAt, string RowVersion);
+public sealed record LoanResponse(int Id, string ApplicationNumber, int CustomerId, string CustomerName, string Product, decimal RequestedAmount, int TenureMonths, decimal InterestRate, bool IsFlatInterest, string Status, DateTimeOffset AppliedAt, string RowVersion, decimal? ActualDisbursedAmount = null, decimal? ProcessingFeePercentage = null, decimal? ProcessingFeeAmount = null, decimal? PlatformFeePercentage = null, decimal? PlatformFeeAmount = null);
 
 public sealed record EmiScheduleResponse(int Id, int LoanApplicationId, int InstallmentNumber, DateTimeOffset DueDate, decimal PrincipalAmount, decimal InterestAmount, decimal EmiAmount, decimal RemainingBalance, string Status);
 

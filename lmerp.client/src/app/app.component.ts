@@ -23,7 +23,8 @@ export class AppComponent {
       { label: 'Customers', path: '/customers', icon: '♙' },
       { label: 'Loan applications', path: '/loans', icon: '▤' },
       { label: 'Repayments', path: '/repayments', icon: '↻' },
-      { label: 'Collections', path: '/collections', icon: '◷' }
+      { label: 'Collections', path: '/collections', icon: '◷' },
+      { label: 'Loan Foreclosure', path: '/foreclosure', icon: '₹' }
     ] },
     { title: 'INSIGHTS & ADMIN', items: [
       { label: 'Reports', path: '/reports', icon: '▥' },

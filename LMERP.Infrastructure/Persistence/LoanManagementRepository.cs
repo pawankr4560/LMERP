@@ -73,10 +73,28 @@ public sealed class LoanManagementRepository(LoanDbContext db, IBusinessClock bu
         return values.Single();
     }
 
-    public async Task UpdateLoanAndAddEmiScheduleAsync(LoanApplication loan, IReadOnlyCollection<EmiSchedule> schedule, CancellationToken cancellationToken)
+    public async Task UpdateLoanAndAddEmiScheduleAsync(LoanApplication loan, IReadOnlyCollection<EmiSchedule> schedule, ILoanDocumentService documentService, CancellationToken cancellationToken)
     {
+        await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
         db.EmiSchedules.AddRange(schedule);
+        // Persist the disbursement and installments first inside the transaction so the PDF
+        // is rendered from the exact database records that will be committed.
         await db.SaveChangesAsync(cancellationToken);
+        var persistedLoan = await db.LoanApplications.AsNoTracking().Include(item => item.Customer)
+            .SingleAsync(item => item.Id == loan.Id, cancellationToken);
+        var persistedSchedule = await db.EmiSchedules.AsNoTracking().Where(item => item.LoanApplicationId == loan.Id)
+            .OrderBy(item => item.InstallmentNumber).ToListAsync(cancellationToken);
+        var initialAdvicePdf = await documentService.GenerateDisbursementAdviceAsync(persistedLoan, persistedSchedule, cancellationToken);
+        if (initialAdvicePdf.Length == 0) throw new InvalidOperationException("The initial disbursement advice PDF was not generated.");
+        db.LoanDisbursementDocuments.Add(new LoanDisbursementDocument
+        {
+            LoanApplicationId = loan.Id,
+            DocumentNumber = $"DA-{loan.ApplicationNumber}",
+            GeneratedAt = DateTimeOffset.UtcNow,
+            PdfContent = initialAdvicePdf
+        });
+        await db.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
     }
 
     public async Task SoftDeleteLoanAsync(LoanApplication loan, CancellationToken cancellationToken)
@@ -108,10 +126,10 @@ public sealed class LoanManagementRepository(LoanDbContext db, IBusinessClock bu
     {
         var totalLoans = await db.LoanApplications.CountAsync(loan=>!loan.IsDeleted,cancellationToken);
         var activeLoans = await db.LoanApplications.CountAsync(loan => !loan.IsDeleted && loan.Status == LoanStatuses.Disbursed, cancellationToken);
-        var pendingApplications = await db.LoanApplications.CountAsync(loan =>!loan.IsDeleted && loan.Status == LoanStatuses.UnderReview || loan.Status == LoanStatuses.DocumentsNeeded, cancellationToken);
+        var pendingApplications = await db.LoanApplications.CountAsync(loan => !loan.IsDeleted && (loan.Status == LoanStatuses.UnderReview || loan.Status == LoanStatuses.DocumentsNeeded), cancellationToken);
         var totalDisbursed = await db.LoanApplications
-            .Where(loan =>!loan.IsDeleted && loan.Status == LoanStatuses.Disbursed || loan.Status == LoanStatuses.Closed)
-            .SumAsync(loan => (decimal?)loan.RequestedAmount, cancellationToken) ?? 0m;
+            .Where(loan => !loan.IsDeleted && (loan.Status == LoanStatuses.Disbursed || loan.Status == LoanStatuses.Closed))
+            .SumAsync(loan => (decimal?)(loan.ActualDisbursedAmount ?? loan.RequestedAmount), cancellationToken) ?? 0m;
         var schedules = await db.EmiSchedules.AsNoTracking()
             .Where(schedule => schedule.LoanApplication!.Status == LoanStatuses.Disbursed)
             .Select(schedule => new
@@ -177,7 +195,7 @@ public sealed class LoanManagementRepository(LoanDbContext db, IBusinessClock bu
                 loan.Customer!.FullName,
                 loan.ApplicationNumber,
                 "Disbursement",
-                loan.RequestedAmount,
+                loan.ActualDisbursedAmount ?? loan.RequestedAmount,
                 loan.DisbursedAt!.Value,
                 null))
             .ToListAsync(cancellationToken);

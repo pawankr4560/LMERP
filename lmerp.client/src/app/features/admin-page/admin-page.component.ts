@@ -3,7 +3,7 @@ import { CommonModule } from '@angular/common';
 import { FormControl, FormRecord, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ActivatedRoute } from '@angular/router';
 import { catchError, of } from 'rxjs';
-import { CustomerDto, LoanApiService, LoanDto, LoanStatus, OverdueEmiDto } from '../../core/api/loan-api.service';
+import { CompanyDocumentSettingsDto, CustomerDto, ForeclosureChargeRuleDto, ForeclosureSettingsDto, LoanApiService, LoanDisbursementSettingsDto, LoanDto, LoanStatus, OverdueEmiDto } from '../../core/api/loan-api.service';
 import { AuthService } from '../../core/auth/auth.service';
 
 interface PageRow { [key: string]: string; }
@@ -81,6 +81,11 @@ export class AdminPageComponent {
   readonly editingId = signal<number | null>(null);
   readonly loanCustomerOptions = signal<{ value: string; label: string }[]>([]);
   readonly loanProductOptions = signal(['Personal loan', 'Business loan', 'Vehicle loan', 'Home loan']);
+  readonly foreclosureSettings = signal<ForeclosureSettingsDto>({ isForeclosureAllowed: true, serviceFeePercentage: 8, feeCalculationType: 'RemainingEmiTotal', updatedAt: '', charges: [{ id: 0, name: 'Foreclosure service fee', isEnabled: true, isTax: false, isServiceFee: true, calculationType: 'Percentage', calculationBasis: 'RemainingEmiTotal', percentage: 8, fixedAmount: 0, sortOrder: 0 }] });
+  readonly companyDocumentSettings = signal<CompanyDocumentSettingsDto>({ companyName: '', hasLogo: false, hasSignature: false, hasStamp: false, updatedAt: '' });
+  readonly companyDocumentFiles = signal<Partial<Record<'logo' | 'signature' | 'stamp', File>>>({});
+  readonly disbursementSettings = signal<LoanDisbursementSettingsDto>({ processingFeePercentage: 0, platformFeePercentage: 0, updatedAt: '' });
+  readonly documentActionLoanId = signal<number | null>(null);
   readonly previewMode = signal(true);
   readonly statusFilter = signal('All statuses');
   readonly sortKey = signal('');
@@ -116,12 +121,18 @@ export class AdminPageComponent {
       this.statusFilter.set('All statuses'); this.pageIndex.set(0); this.sortKey.set('');
       this.makeForm();
       this.loadRemoteRows();
+      if (this.section() === 'settings') {
+        this.api.foreclosureSettings().subscribe({ next: settings => this.foreclosureSettings.set(settings), error: error => this.notify(this.errorMessage(error)) });
+        this.api.companyDocumentSettings().subscribe({ next: settings => this.companyDocumentSettings.set(settings), error: error => this.notify(this.errorMessage(error)) });
+        if (this.isAdministrator()) this.api.loanDisbursementSettings().subscribe({ next: settings => this.disbursementSettings.set(settings), error: error => this.notify(this.errorMessage(error)) });
+      }
       if (data['create']) this.openDialog();
     });
   }
 
   cell(row: PageRow, key: string): string { return row[key] ?? '—'; }
   canMutate(): boolean { return this.auth.hasRole('Administrator', 'LoanOfficer'); }
+  isAdministrator(): boolean { return this.auth.hasRole('Administrator'); }
   setQuery(value: string): void { this.query.set(value); this.pageIndex.set(0); }
   setStatusFilter(value: string): void { this.statusFilter.set(value); this.pageIndex.set(0); }
   sortBy(key: string): void {
@@ -142,7 +153,11 @@ export class AdminPageComponent {
     const id = Number(row['id']);
     if (!id) return;
     this.api.disburseLoan(id).subscribe({
-      next: loan => { this.rows.update(rows => rows.map(item => Number(item['id']) === id ? this.loanRow(loan) : item)); this.notify('Loan disbursed and EMI schedule generated.'); },
+      next: loan => {
+        this.rows.update(rows => rows.map(item => Number(item['id']) === id ? this.loanRow(loan) : item));
+        this.notify(`Loan disbursed. Net payout: ₹ ${(loan.actualDisbursedAmount ?? loan.requestedAmount).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}. EMI schedule generated on full principal.`);
+        this.documentActionLoanId.set(id);
+      },
       error: error => this.notify(this.errorMessage(error))
     });
   }
@@ -246,6 +261,104 @@ export class AdminPageComponent {
     this.addLocalRow(values);
     this.finishSave();
   }
+  updateForeclosureSettings(field: 'isForeclosureAllowed', value: boolean): void {
+    this.foreclosureSettings.update(settings => ({ ...settings, [field]: value }));
+  }
+  updateForeclosureCharge(index: number, field: keyof ForeclosureChargeRuleDto, value: string | number | boolean): void {
+    this.foreclosureSettings.update(settings => {
+      const charges = Array.isArray(settings.charges) ? settings.charges : [];
+      return { ...settings, charges: charges.map((charge, i) => i === index ? { ...charge, [field]: value } as ForeclosureChargeRuleDto : charge) };
+    });
+  }
+  addForeclosureCharge(): void {
+    this.foreclosureSettings.update(settings => {
+      const charges = Array.isArray(settings.charges) ? settings.charges : [];
+      return { ...settings, charges: [...charges, { id: 0, name: '', isEnabled: true, isTax: false, isServiceFee: false, calculationType: 'Percentage', calculationBasis: 'ServiceFee', percentage: 0, fixedAmount: 0, sortOrder: charges.length }] };
+    });
+  }
+  removeForeclosureCharge(index: number): void {
+    const charges = this.foreclosureSettings().charges ?? [];
+    if (charges[index]?.isServiceFee) { this.notify('Keep one service fee rule. You can set its amount to zero or disable it.'); return; }
+    this.foreclosureSettings.update(settings => ({ ...settings, charges: (settings.charges ?? []).filter((_, i) => i !== index).map((charge, sortOrder) => ({ ...charge, sortOrder })) }));
+  }
+  saveForeclosureSettings(): void {
+    const settings = this.foreclosureSettings();
+    const charges = Array.isArray(settings.charges) ? settings.charges : [];
+    if (!settings.dynamicChargeRulesSupported) { this.notify('The running API is outdated and does not support configurable foreclosure charges. Restart the backend after applying its latest database migration, then reopen Settings.'); return; }
+    if (charges.filter(charge => charge.isServiceFee).length !== 1) { this.notify('Configure exactly one service fee rule.'); return; }
+    if (charges.some(charge => !charge.name.trim() || (charge.calculationType === 'Percentage' && (charge.percentage < 0 || charge.percentage > 100)) || (charge.calculationType === 'Fixed' && charge.fixedAmount < 0))) { this.notify('Enter a name and valid non-negative values for every charge.'); return; }
+    this.api.updateForeclosureSettings({ isForeclosureAllowed: settings.isForeclosureAllowed, serviceFeePercentage: settings.serviceFeePercentage, feeCalculationType: 'RemainingEmiTotal', charges: charges.map(({ id, ...charge }) => charge) }).subscribe({
+      next: saved => {
+        this.foreclosureSettings.set(saved);
+        if (!saved.dynamicChargeRulesSupported) { this.notify('The running API did not save the charge rules. Restart the backend with the latest build and migration, then try again.'); return; }
+        this.notify('Foreclosure settings saved.');
+      },
+      error: error => this.notify(this.errorMessage(error))
+    });
+  }
+  updateDisbursementFee(field: 'processingFeePercentage' | 'platformFeePercentage', value: number): void {
+    this.disbursementSettings.update(settings => ({ ...settings, [field]: value }));
+  }
+  saveDisbursementSettings(): void {
+    const settings = this.disbursementSettings();
+    if (settings.processingFeePercentage < 0 || settings.platformFeePercentage < 0 || settings.processingFeePercentage > 99.99 || settings.platformFeePercentage > 99.99 || settings.processingFeePercentage + settings.platformFeePercentage >= 100) {
+      this.notify('Both fees must be non-negative and together must be less than 100%.'); return;
+    }
+    this.api.updateLoanDisbursementSettings({ processingFeePercentage: settings.processingFeePercentage, platformFeePercentage: settings.platformFeePercentage }).subscribe({
+      next: saved => { this.disbursementSettings.set(saved); this.notify('Loan disbursement fee settings saved.'); },
+      error: error => this.notify(this.errorMessage(error))
+    });
+  }
+  updateCompanyDocumentField(field: 'companyName' | 'address' | 'phone' | 'email' | 'website' | 'authorizedSignatoryName' | 'authorizedSignatoryDesignation' | 'footerDisclaimer', value: string): void {
+    this.companyDocumentSettings.update(settings => ({ ...settings, [field]: value }));
+  }
+  selectCompanyDocumentFile(asset: 'logo' | 'signature' | 'stamp', event: Event): void {
+    const file = (event.target as HTMLInputElement).files?.[0];
+    if (!file) return;
+    if (!['image/png', 'image/jpeg'].includes(file.type) || file.size > 2 * 1024 * 1024) {
+      (event.target as HTMLInputElement).value = '';
+      this.notify('Choose a PNG or JPEG image no larger than 2 MB.');
+      return;
+    }
+    this.companyDocumentFiles.update(files => ({ ...files, [asset]: file }));
+  }
+  saveCompanyDocumentSettings(): void {
+    const settings = this.companyDocumentSettings();
+    if (settings.companyName.trim().length < 2) { this.notify('Enter the company name.'); return; }
+    const write = { companyName: settings.companyName, address: settings.address, phone: settings.phone, email: settings.email,
+      website: settings.website, authorizedSignatoryName: settings.authorizedSignatoryName,
+      authorizedSignatoryDesignation: settings.authorizedSignatoryDesignation, footerDisclaimer: settings.footerDisclaimer };
+    this.api.updateCompanyDocumentSettings(write, this.companyDocumentFiles()).subscribe({
+      next: saved => { this.companyDocumentSettings.set(saved); this.companyDocumentFiles.set({}); this.notify('Company document settings saved.'); },
+      error: error => this.notify(this.errorMessage(error))
+    });
+  }
+  previewLoanPdf(id: number, type: 'disbursement-advice' | 'emi-statement'): void {
+    const previewWindow = window.open('about:blank', '_blank');
+    this.api.loanDocument(id, type).subscribe({
+      next: blob => {
+        const url = URL.createObjectURL(blob);
+        if (previewWindow) previewWindow.location.href = url;
+        else { this.triggerDownload(url, `${type}-${id}.pdf`); this.notify('Popup was blocked; the PDF was downloaded instead.'); }
+        setTimeout(() => URL.revokeObjectURL(url), 60_000);
+      },
+      error: error => { previewWindow?.close(); this.notify(this.errorMessage(error)); }
+    });
+  }
+  downloadLoanPdf(id: number, type: 'disbursement-advice' | 'emi-statement'): void {
+    this.api.loanDocument(id, type).subscribe({
+      next: blob => this.triggerDownload(URL.createObjectURL(blob), `${type}-${id}.pdf`),
+      error: error => this.notify(this.errorMessage(error))
+    });
+  }
+  downloadNewDisbursementAdvice(): void {
+    const id = this.documentActionLoanId();
+    if (id) this.downloadLoanPdf(id, 'disbursement-advice');
+  }
+  private triggerDownload(url: string, fileName: string): void {
+    const anchor = document.createElement('a'); anchor.href = url; anchor.download = fileName; anchor.click();
+    setTimeout(() => URL.revokeObjectURL(url), 60_000);
+  }
   private addLocalRow(values: Record<string, string>): void {
     const columns = this.definition().columns;
     const row: PageRow = {};
@@ -285,7 +398,7 @@ export class AdminPageComponent {
     return { id: String(customer.id), rowVersion: customer.rowVersion, customer: `${customer.fullName}|CUS-${String(customer.id).padStart(5, '0')}`, phone: customer.phone, email: customer.email ?? '—', city: customer.city ?? '—', loans: `${customer.loanCount} ${customer.loanCount === 1 ? 'loan' : 'loans'}`, joined: new Date(customer.createdAt).toLocaleDateString('en-IN'), status: customer.status };
   }
   private loanRow(loan: LoanDto): PageRow {
-    return { id: String(loan.id), rowVersion: loan.rowVersion, customerId: String(loan.customerId), customerName: loan.customerName, application: `${loan.customerName}|${loan.applicationNumber}`, applicationNumber: loan.applicationNumber, product: loan.product, requestedAmount: String(loan.requestedAmount), tenureMonths: String(loan.tenureMonths), interestRate: String(loan.interestRate), isFlatInterest: String(loan.isFlatInterest), amount: `₹ ${loan.requestedAmount.toLocaleString('en-IN')}`, date: new Date(loan.appliedAt).toLocaleDateString('en-IN'), status: loan.status };
+    return { id: String(loan.id), rowVersion: loan.rowVersion, customerId: String(loan.customerId), customerName: loan.customerName, application: `${loan.customerName}|${loan.applicationNumber}`, applicationNumber: loan.applicationNumber, product: loan.product, requestedAmount: String(loan.requestedAmount), actualDisbursedAmount: String(loan.actualDisbursedAmount ?? ''), processingFee: String(loan.processingFeeAmount ?? ''), platformFee: String(loan.platformFeeAmount ?? ''), tenureMonths: String(loan.tenureMonths), interestRate: String(loan.interestRate), isFlatInterest: String(loan.isFlatInterest), amount: `₹ ${loan.requestedAmount.toLocaleString('en-IN')}`, date: new Date(loan.appliedAt).toLocaleDateString('en-IN'), status: loan.status };
   }
   private collectionRow(item: OverdueEmiDto): PageRow {
     const status = item.emiOutstanding <= 0 ? 'Late fee due' : item.status === 'Partially paid' ? 'Partially paid' : 'Overdue';
@@ -321,7 +434,7 @@ export class AdminPageComponent {
     removeLocal();
     this.notify('Record removed from this preview session.');
   }
-  private notify(message: string): void { this.toast.set(message); setTimeout(() => this.toast.set(''), 3200); }
+  private notify(message: string): void { this.documentActionLoanId.set(null); this.toast.set(message); setTimeout(() => this.toast.set(''), 5000); }
   private errorMessage(error: unknown): string {
     const response = error as { error?: { message?: unknown; errors?: unknown } };
     const message = typeof response?.error?.message === 'string' ? response.error.message : '';

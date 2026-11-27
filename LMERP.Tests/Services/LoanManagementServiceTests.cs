@@ -9,11 +9,13 @@ namespace LMERP.Tests.Services;
 
 public sealed class LoanManagementServiceTests
 {
+    private static LoanManagementService CreateService(ILoanManagementRepository repository) => new(repository, new FakeLoanDocumentService());
+
     [Fact]
     public async Task DeleteLoanAsync_WithoutScheduleOrPayments_SoftDeletesLoan()
     {
         var repository = new FakeLoanManagementRepository { Loan = new LoanApplication { Id = 10 } };
-        var result = await new LoanManagementService(repository).DeleteLoanAsync(10, CancellationToken.None);
+        var result = await CreateService(repository).DeleteLoanAsync(10, CancellationToken.None);
 
         Assert.Equal(OperationStatus.Success, result.Status);
         Assert.True(repository.SoftDeleteCalled);
@@ -23,7 +25,7 @@ public sealed class LoanManagementServiceTests
     public async Task DeleteLoanAsync_WithEmiSchedule_ReturnsConflictAndDoesNotDelete()
     {
         var repository = new FakeLoanManagementRepository { Loan = new LoanApplication { Id = 10 }, HasSchedule = true };
-        var result = await new LoanManagementService(repository).DeleteLoanAsync(10, CancellationToken.None);
+        var result = await CreateService(repository).DeleteLoanAsync(10, CancellationToken.None);
 
         Assert.Equal(OperationStatus.Conflict, result.Status);
         Assert.Equal("Loans with a generated EMI schedule cannot be deleted.", result.Message);
@@ -34,7 +36,7 @@ public sealed class LoanManagementServiceTests
     public async Task DeleteLoanAsync_WithPayments_ReturnsStrongerConflictAndDoesNotDelete()
     {
         var repository = new FakeLoanManagementRepository { Loan = new LoanApplication { Id = 10 }, HasSchedule = true, HasPayments = true };
-        var result = await new LoanManagementService(repository).DeleteLoanAsync(10, CancellationToken.None);
+        var result = await CreateService(repository).DeleteLoanAsync(10, CancellationToken.None);
 
         Assert.Equal(OperationStatus.Conflict, result.Status);
         Assert.Equal("Loans with recorded payments cannot be deleted.", result.Message);
@@ -45,7 +47,7 @@ public sealed class LoanManagementServiceTests
     public async Task DeleteLoanAsync_UnknownLoan_ReturnsNotFound()
     {
         var repository = new FakeLoanManagementRepository();
-        var result = await new LoanManagementService(repository).DeleteLoanAsync(404, CancellationToken.None);
+        var result = await CreateService(repository).DeleteLoanAsync(404, CancellationToken.None);
 
         Assert.Equal(OperationStatus.NotFound, result.Status);
         Assert.False(repository.SoftDeleteCalled);
@@ -55,7 +57,7 @@ public sealed class LoanManagementServiceTests
     public async Task CreateLoanAsync_UsesSequenceNumberInApplicationFormat()
     {
         var repository = new FakeLoanManagementRepository { ActiveCustomer = new Customer { Id = 3, FullName = "Test" }, NextNumber = 1000 };
-        var result = await new LoanManagementService(repository).CreateLoanAsync(new LoanRequest { CustomerId = 3, Product = "Personal loan", RequestedAmount = 10000, TenureMonths = 12, InterestRate = 12 }, CancellationToken.None);
+        var result = await CreateService(repository).CreateLoanAsync(new LoanRequest { CustomerId = 3, Product = "Personal loan", RequestedAmount = 10000, TenureMonths = 12, InterestRate = 12 }, CancellationToken.None);
         Assert.Equal(OperationStatus.Success, result.Status);
         Assert.Equal($"LN-{DateTime.UtcNow:yyyy}-001000", result.Value!.ApplicationNumber);
     }
@@ -64,7 +66,7 @@ public sealed class LoanManagementServiceTests
     public async Task CreateLoanAsync_UnknownProduct_ReturnsBadRequest()
     {
         var repository = new FakeLoanManagementRepository { ActiveCustomer = new Customer { Id = 3 }, ActiveProducts = [] };
-        var result = await new LoanManagementService(repository).CreateLoanAsync(new LoanRequest { CustomerId = 3, Product = "Mystery loan", RequestedAmount = 10000, TenureMonths = 12, InterestRate = 12 }, CancellationToken.None);
+        var result = await CreateService(repository).CreateLoanAsync(new LoanRequest { CustomerId = 3, Product = "Mystery loan", RequestedAmount = 10000, TenureMonths = 12, InterestRate = 12 }, CancellationToken.None);
         Assert.Equal(OperationStatus.BadRequest, result.Status);
         Assert.Equal("Select an active loan product.", result.Message);
     }
@@ -73,7 +75,7 @@ public sealed class LoanManagementServiceTests
     public async Task CreateLoanAsync_InactiveProduct_ReturnsBadRequest()
     {
         var repository = new FakeLoanManagementRepository { ActiveCustomer = new Customer { Id = 3 }, ActiveProducts = [] };
-        var result = await new LoanManagementService(repository).CreateLoanAsync(new LoanRequest { CustomerId = 3, Product = "Personal loan", RequestedAmount = 10000, TenureMonths = 12, InterestRate = 12 }, CancellationToken.None);
+        var result = await CreateService(repository).CreateLoanAsync(new LoanRequest { CustomerId = 3, Product = "Personal loan", RequestedAmount = 10000, TenureMonths = 12, InterestRate = 12 }, CancellationToken.None);
         Assert.Equal(OperationStatus.BadRequest, result.Status);
     }
 
@@ -91,7 +93,7 @@ public sealed class LoanManagementServiceTests
     public async Task UpdateLoanAsync_AllowsSpecifiedTransitions(string current, string next)
     {
         var repository = new FakeLoanManagementRepository { Loan = NewLoan(current) };
-        var result = await new LoanManagementService(repository).UpdateLoanAsync(10, UpdateRequest(next), CancellationToken.None);
+        var result = await CreateService(repository).UpdateLoanAsync(10, UpdateRequest(next), CancellationToken.None);
         Assert.Equal(OperationStatus.Success, result.Status);
     }
 
@@ -103,7 +105,7 @@ public sealed class LoanManagementServiceTests
     public async Task UpdateLoanAsync_RejectsForbiddenTransitions(string current, string next)
     {
         var repository = new FakeLoanManagementRepository { Loan = NewLoan(current) };
-        var result = await new LoanManagementService(repository).UpdateLoanAsync(10, UpdateRequest(next), CancellationToken.None);
+        var result = await CreateService(repository).UpdateLoanAsync(10, UpdateRequest(next), CancellationToken.None);
         Assert.Equal(OperationStatus.Conflict, result.Status);
     }
 
@@ -111,18 +113,35 @@ public sealed class LoanManagementServiceTests
     public async Task DisburseLoanAsync_GeneratesOneScheduleRowPerTenureMonth()
     {
         var repository = new FakeLoanManagementRepository { Loan = NewLoan(LoanStatuses.Approved) };
-        var result = await new LoanManagementService(repository).DisburseLoanAsync(10, CancellationToken.None);
+        var result = await CreateService(repository).DisburseLoanAsync(10, CancellationToken.None);
         Assert.Equal(OperationStatus.Success, result.Status);
         Assert.Equal(LoanStatuses.Disbursed, repository.Loan!.Status);
         Assert.NotNull(repository.Loan.DisbursedAt);
         Assert.Equal(6, repository.ScheduleRows.Count);
+        Assert.StartsWith("%PDF", System.Text.Encoding.ASCII.GetString(repository.InitialAdvicePdf));
+    }
+
+    [Fact]
+    public async Task DisburseLoanAsync_DeductsConfiguredFeesButBuildsEmiOnPrincipal()
+    {
+        var repository = new FakeLoanManagementRepository { Loan = NewLoan(LoanStatuses.Approved) };
+        var service = new LoanManagementService(repository, new FakeLoanDocumentService(), null, new FakeDisbursementSettings(5m, 2m));
+
+        var result = await service.DisburseLoanAsync(10, CancellationToken.None);
+
+        Assert.Equal(OperationStatus.Success, result.Status);
+        Assert.Equal(1200m, repository.Loan!.RequestedAmount);
+        Assert.Equal(60m, repository.Loan.ProcessingFeeAmount);
+        Assert.Equal(24m, repository.Loan.PlatformFeeAmount);
+        Assert.Equal(1116m, repository.Loan.ActualDisbursedAmount);
+        Assert.Equal(1200m, repository.ScheduleRows.Sum(row => row.PrincipalAmount));
     }
 
     [Fact]
     public async Task DisburseLoanAsync_CannotDisburseTwice()
     {
         var repository = new FakeLoanManagementRepository { Loan = NewLoan(LoanStatuses.Approved) };
-        var service = new LoanManagementService(repository);
+        var service = CreateService(repository);
         Assert.Equal(OperationStatus.Success, (await service.DisburseLoanAsync(10, CancellationToken.None)).Status);
         Assert.Equal(OperationStatus.Conflict, (await service.DisburseLoanAsync(10, CancellationToken.None)).Status);
     }
@@ -130,7 +149,7 @@ public sealed class LoanManagementServiceTests
     [Fact]
     public async Task RejectLoanAsync_RequiresReason()
     {
-        var result = await new LoanManagementService(new FakeLoanManagementRepository { Loan = NewLoan(LoanStatuses.UnderReview) })
+        var result = await CreateService(new FakeLoanManagementRepository { Loan = NewLoan(LoanStatuses.UnderReview) })
             .RejectLoanAsync(10, "bad", CancellationToken.None);
         Assert.Equal(OperationStatus.BadRequest, result.Status);
     }
@@ -162,6 +181,7 @@ public sealed class LoanManagementServiceTests
         public long NextNumber { get; init; } = 1000;
         public HashSet<string> ActiveProducts { get; init; } = ["Personal loan"];
         public IReadOnlyList<EmiSchedule> ScheduleRows { get; private set; } = [];
+        public byte[] InitialAdvicePdf { get; private set; } = [];
 
         public Task<LoanApplication?> GetLoanForUpdateAsync(int id, CancellationToken cancellationToken) => Task.FromResult(Loan?.Id == id ? Loan : null);
         public Task<bool> LoanHasPaymentsAsync(int loanId, CancellationToken cancellationToken) => Task.FromResult(HasPayments);
@@ -182,10 +202,31 @@ public sealed class LoanManagementServiceTests
         public Task AddLoanAsync(LoanApplication loan, CancellationToken cancellationToken) => Task.CompletedTask;
         public Task<long> GetNextApplicationNumberAsync(CancellationToken cancellationToken) => Task.FromResult(NextNumber);
         public Task UpdateLoanAsync(LoanApplication loan, CancellationToken cancellationToken) => Task.CompletedTask;
-        public Task UpdateLoanAndAddEmiScheduleAsync(LoanApplication loan, IReadOnlyCollection<EmiSchedule> schedule, CancellationToken cancellationToken) { ScheduleRows = schedule.ToArray(); return Task.CompletedTask; }
+        public async Task UpdateLoanAndAddEmiScheduleAsync(LoanApplication loan, IReadOnlyCollection<EmiSchedule> schedule, ILoanDocumentService documentService, CancellationToken cancellationToken)
+        {
+            ScheduleRows = schedule.ToArray();
+            InitialAdvicePdf = await documentService.GenerateDisbursementAdviceAsync(loan, schedule, cancellationToken);
+        }
         public Task<LoanProduct?> GetLoanProductAsync(string name, CancellationToken cancellationToken) => Task.FromResult(ActiveProducts.Contains(name) ? new LoanProduct { Name = name, IsActive = true } : null);
         public Task<IReadOnlyList<EmiSchedule>> GetEmiScheduleAsync(int loanId, CancellationToken cancellationToken) => throw new NotImplementedException();
         public Task<DashboardSummary> GetDashboardSummaryAsync(CancellationToken cancellationToken) => throw new NotImplementedException();
         public Task<IReadOnlyList<DashboardTransactionResponse>> GetRecentDashboardTransactionsAsync(CancellationToken cancellationToken) => throw new NotImplementedException();
+    }
+
+    private sealed class FakeLoanDocumentService : ILoanDocumentService
+    {
+        public Task<byte[]> GenerateDisbursementAdviceAsync(LoanApplication loan, IReadOnlyCollection<EmiSchedule> schedules, CancellationToken ct) =>
+            Task.FromResult(System.Text.Encoding.ASCII.GetBytes("%PDF-fake"));
+        public Task<LoanPdfFile?> GetDisbursementAdviceAsync(int loanId, CancellationToken ct) => Task.FromResult<LoanPdfFile?>(null);
+        public Task<LoanPdfFile> GenerateLatestEmiStatementAsync(int loanId, CancellationToken ct) => throw new NotImplementedException();
+        public Task<CompanyDocumentSettingsResponse> GetCompanySettingsAsync(CancellationToken ct) => throw new NotImplementedException();
+        public Task<CompanyDocumentSettingsResponse> UpdateCompanySettingsAsync(CompanyDocumentSettingsRequest request, CompanyDocumentAssetUpload? logo, CompanyDocumentAssetUpload? signature, CompanyDocumentAssetUpload? stamp, CancellationToken ct) => throw new NotImplementedException();
+        public Task<CompanyDocumentAsset?> GetCompanyAssetAsync(string assetName, CancellationToken ct) => Task.FromResult<CompanyDocumentAsset?>(null);
+    }
+
+    private sealed class FakeDisbursementSettings(decimal processing, decimal platform) : ILoanDisbursementSettingsService
+    {
+        public Task<LoanDisbursementSettingsResponse> GetAsync(CancellationToken cancellationToken) => Task.FromResult(new LoanDisbursementSettingsResponse(processing, platform, DateTimeOffset.UtcNow, null));
+        public Task<LoanDisbursementSettingsResponse> UpdateAsync(LoanDisbursementSettingsRequest request, string updatedBy, CancellationToken cancellationToken) => throw new NotImplementedException();
     }
 }

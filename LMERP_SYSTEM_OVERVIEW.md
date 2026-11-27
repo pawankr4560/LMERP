@@ -38,7 +38,7 @@ Customer records include contact details, status, and associated loan count. Cus
 
 ### Loan applications
 
-Loan applications hold the customer, product, amount, tenure, interest terms, application date, and lifecycle status. The lifecycle includes Under review, Documents needed, Approved, Rejected, Disbursed, and Closed. A loan is disbursed only after approval; disbursement creates its EMI schedule.
+Loan applications hold the customer, product, amount, tenure, interest terms, application date, and lifecycle status. The lifecycle includes Under review, Documents needed, Approved, Rejected, Disbursed, and Closed. A loan is disbursed only after approval; disbursement creates its EMI schedule. Administrators configure processing and platform fees as separate percentages in Settings. Each percentage is applied to approved principal, rounded independently to cents, and saved as a loan-level snapshot at disbursement. Net cash paid to the customer is principal minus both fees; the EMI schedule continues to amortize the full principal. Existing loans without fee snapshots display principal as the legacy disbursed amount.
 
 Loan application deletion is a soft delete. Deleted loans are excluded by EF Core query filters, while their database records are retained.
 
@@ -46,7 +46,29 @@ Loan application deletion is a soft delete. Deleted loans are excluded by EF Cor
 
 Repayments use EMI schedules, payment records, payment allocations, and late-fee records. Payments are allocated to EMI balance first, then to the oldest unpaid late fees. An optional `Idempotency-Key` prevents duplicate payment submissions. Late fees can be waived by administrators; schedules can be exempted from future late fees.
 
+### Loan documents
+
+Successful disbursement persists the EMI rows and an immutable A4 landscape Loan Disbursement Advice & EMI Repayment Schedule PDF in one database transaction. The renderer reads the saved loan and schedule rows and does not recalculate EMI values. It displays the annual nominal interest rate divided by 12 as the monthly rate, and labels the flat/reducing-balance method as the interest type. Monetary schedule headers and values are both right-aligned. The original document number is `DA-{ApplicationNumber}` and is never regenerated after payments. The current loan schema has no separate account number or street address, so the PDF uses the application number as the loan account reference and the customer City field as the available address. The PDF displays principal, each saved fee and rate, and net disbursed amount.
+
+The latest EMI statement is generated on request from current saved payment allocations and schedule rows. Paid amount is based on allocations to the EMI component; outstanding is EMI less that amount. Status is Paid when fully allocated, Overdue when unpaid balance remains after the due date, Partially paid for a partial payment before/during its due date, otherwise Pending. Staff roles can access loan documents. A customer account must be linked by an administrator to a customer record; its signed-in JWT then includes the `customer_id` claim and can access only that customer’s documents. Company name/contact, authorized signatory, disclaimer, logo, signature, and optional stamp are configured in Settings. Uploaded images are restricted to PNG/JPEG up to 2 MB each and stored in SQL Server; PDF endpoints return private, no-store responses.
+
 The collections queue is built from overdue EMI data and includes late fees in the outstanding balance. Dashboard transaction activity includes saved disbursements and recorded repayments.
+
+The disbursement fee settings API is GET/PUT /api/settings/disbursement-fees (Administrator only). Percentages default to 0% and their sum must remain below 100%. Dashboard disbursement totals and transaction rows use the saved net disbursed amount, falling back to principal for legacy records. Schema changes are in migration `20261127122634_AddLoanDisbursementFeeSettings`; apply it with the normal EF Core migration workflow before running the updated application.
+
+### Loan foreclosure
+
+Loan foreclosure is available to Administrator, Loan Officer, and Collections Manager roles at `/foreclosure`. The API searches only active Disbursed loans. The quote includes the customer and loan details, EMI schedule, existing EMI payments and allocations, unpaid late fees, and a calculation date.
+
+Foreclosure charges are configured by administrators in Settings. A default 8% service fee is provided for a new installation, while existing installations retain their saved legacy service-fee percentage when the charge rule is first created. Administrators can add named percentage or fixed-amount charges and taxes, choose a calculation basis (remaining EMI total, outstanding principal, accrued interest, late fees, settlement before charges, service fee, or previous charges), enable or disable each rule, and identify tax lines. The settlement payable is **outstanding principal + accrued interest + unpaid late fees + all enabled configured charges - adjustments**. Each quote displays the individual charge lines; confirmed foreclosure records snapshot each applied charge so later settings changes do not alter historical settlements. Historical EMI payments are split pro rata according to the installment's scheduled principal and interest; simple daily interest accrues at the loan annual rate divided by 365 from disbursement through the quote date, less the interest portion attributed to prior payments. Monetary results are rounded to cents using midpoint-away-from-zero rounding.
+
+The current loan model does not persist separate approved or disbursed amounts; the foreclosure API returns those as unavailable rather than showing the requested amount as if it were an approved/disbursed amount. Existing payment allocations do not preserve principal/interest splits, so foreclosure uses the documented pro-rata rule for historical payment allocation. Review this accounting policy with Finance before production use.
+
+Foreclosure records snapshot the calculation and service-fee percentage. Payments are stored as separate transactions and may be partial. A serializable transaction, unique loan/foreclosure indexes, row version, and optional `Idempotency-Key` protect against duplicate submissions and concurrent updates. A loan and its remaining EMI schedules are marked Foreclosed only after full settlement. During a partial foreclosure, regular EMI collections and late-fee accrual are paused for that loan; the outstanding settlement remains available for additional payments. Historical schedules, late fees, and EMI payments are retained.
+
+Foreclosure settings are available on the Settings screen. Only Administrators can update enablement and charge rules. Percentage charges accept 0–100%; fixed charges accept non-negative amounts. Exactly one service-fee rule is required, and the default service-fee basis is remaining unpaid EMI total.
+
+The Angular Settings page normalizes legacy settings responses that do not contain charge rules to a single service-fee row, preventing editor actions from failing on an undefined list. It detects that older API response and does not claim dynamic rules were saved; the backend must be restarted with the dynamic-charge build and migration before saving additional rules.
 
 ### Dashboard and supporting screens
 
@@ -101,6 +123,8 @@ The response also carries the `X-Correlation-ID` header. Use its value or `trace
 | Loans | `GET/POST /api/loans`, `GET/PUT/DELETE /api/loans/{id}`, `GET /api/loans/{id}/emi-schedule`, `POST /api/loans/{id}/disburse`, `POST /api/loans/{id}/reject` |
 | Repayments | `GET /api/repayments/overdue`, `GET /api/repayments/summary`, `GET /api/repayments/emi/{scheduleId}`, `GET/POST /api/repayments/emi/{scheduleId}/payments` |
 | Late fees and products | `POST /api/repayments/late-fees/{feeId}/waive`, `POST /api/repayments/emi/{scheduleId}/exempt-late-fees`, `GET/POST /api/repayments/products`, `PUT /api/repayments/products/{id}` |
+| Foreclosure | `GET /api/foreclosures/loans/{loanNumber}`, `GET /api/foreclosures?loanNumber=...`, `POST /api/foreclosures/loans/{loanNumber}`, `POST /api/foreclosures/{foreclosureId}/payments`, `GET/PUT /api/foreclosures/settings` |
+| Loan documents | `GET /api/documents/loans/{loanId}/disbursement-advice`, `GET /api/documents/loans/{loanId}/emi-statement`, `GET/PUT /api/documents/settings`, `GET /api/documents/settings/assets/{assetName}`, `PUT /api/documents/customer-links/{userId}` (Administrator) |
 
 ## Running and Verifying
 
@@ -119,4 +143,4 @@ npm ci
 npm run build
 ```
 
-Schema changes use EF Core code-first migrations in `LMERP.Infrastructure/Persistence/Migrations`. Review generated migrations before applying them to a shared or production database.
+Schema changes use EF Core code-first migrations in `LMERP.Infrastructure/Persistence/Migrations`. Foreclosure records are added by `AddLoanForeclosure`; dynamic charge rules and charge snapshots are added by `AddDynamicForeclosureCharges`; company document settings and immutable disbursement PDFs are added by `AddLoanDisbursementDocuments`. Startup migration applies them through the existing `Database.MigrateAsync()` setup. Review generated migrations before applying them to a shared or production database.

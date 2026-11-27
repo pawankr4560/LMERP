@@ -6,7 +6,7 @@ using LMERP.Domain;
 
 namespace LMERP.Application.Services;
 
-public sealed class LoanManagementService(ILoanManagementRepository repository, CustomerPhoneOptions? phoneOptions = null) : ILoanManagementService
+public sealed class LoanManagementService(ILoanManagementRepository repository, ILoanDocumentService documents, CustomerPhoneOptions? phoneOptions = null, ILoanDisbursementSettingsService? disbursementSettings = null) : ILoanManagementService
 {
     public async Task<IReadOnlyList<CustomerResponse>> GetCustomersAsync(CancellationToken cancellationToken) =>
         (await repository.GetCustomersAsync(cancellationToken)).Select(ToResponse).ToArray();
@@ -130,10 +130,22 @@ public sealed class LoanManagementService(ILoanManagementRepository repository, 
 
         var product = await repository.GetLoanProductAsync(loan.Product, cancellationToken);
         if (product is null) return OperationResult<LoanResponse>.Conflict("The loan product is unavailable for disbursement.");
+        var feeSettings = disbursementSettings is null
+            ? new LoanDisbursementSettingsResponse(0m, 0m, DateTimeOffset.UtcNow, null)
+            : await disbursementSettings.GetAsync(cancellationToken);
+        var processingFee = decimal.Round(loan.RequestedAmount * feeSettings.ProcessingFeePercentage / 100m, 2, MidpointRounding.AwayFromZero);
+        var platformFee = decimal.Round(loan.RequestedAmount * feeSettings.PlatformFeePercentage / 100m, 2, MidpointRounding.AwayFromZero);
+        var netDisbursed = loan.RequestedAmount - processingFee - platformFee;
+        if (netDisbursed <= 0m) return OperationResult<LoanResponse>.BadRequest("Configured fees must be less than the loan principal.");
+        loan.ProcessingFeePercentage = feeSettings.ProcessingFeePercentage;
+        loan.ProcessingFeeAmount = processingFee;
+        loan.PlatformFeePercentage = feeSettings.PlatformFeePercentage;
+        loan.PlatformFeeAmount = platformFee;
+        loan.ActualDisbursedAmount = netDisbursed;
         loan.DisbursedAt = DateTimeOffset.UtcNow;
         loan.Status = LoanStatuses.Disbursed;
         var schedule = LoanEmiScheduleBuilder.Build(loan, loan.DisbursedAt.Value, product);
-        await repository.UpdateLoanAndAddEmiScheduleAsync(loan, schedule, cancellationToken);
+        await repository.UpdateLoanAndAddEmiScheduleAsync(loan, schedule, documents, cancellationToken);
         return OperationResult<LoanResponse>.Ok(ToResponse(loan), "Loan disbursed and EMI schedule generated.");
     }
 
@@ -181,7 +193,7 @@ public sealed class LoanManagementService(ILoanManagementRepository repository, 
     public Task<IReadOnlyList<DashboardTransactionResponse>> GetRecentDashboardTransactionsAsync(CancellationToken cancellationToken) => repository.GetRecentDashboardTransactionsAsync(cancellationToken);
 
     private static CustomerResponse ToResponse(Customer customer) => new(customer.Id, customer.FullName, customer.Phone, customer.Email, customer.City, customer.Status, customer.CreatedAt, customer.LoanApplications.Count, Convert.ToBase64String(customer.RowVersion));
-    private static LoanResponse ToResponse(LoanApplication loan) => new(loan.Id, loan.ApplicationNumber, loan.CustomerId, loan.Customer?.FullName ?? string.Empty, loan.Product, loan.RequestedAmount, loan.TenureMonths, loan.InterestRate, loan.IsFlatInterest, loan.Status, loan.AppliedAt, Convert.ToBase64String(loan.RowVersion));
+    private static LoanResponse ToResponse(LoanApplication loan) => new(loan.Id, loan.ApplicationNumber, loan.CustomerId, loan.Customer?.FullName ?? string.Empty, loan.Product, loan.RequestedAmount, loan.TenureMonths, loan.InterestRate, loan.IsFlatInterest, loan.Status, loan.AppliedAt, Convert.ToBase64String(loan.RowVersion), loan.ActualDisbursedAmount, loan.ProcessingFeePercentage, loan.ProcessingFeeAmount, loan.PlatformFeePercentage, loan.PlatformFeeAmount);
     private static byte[] ParseRowVersion(string? rowVersion) { try { return Convert.FromBase64String(rowVersion ?? string.Empty); } catch (FormatException) { throw new DomainValidationException("The record version is invalid. Reload and try again."); } }
     private static EmiScheduleResponse ToResponse(EmiSchedule schedule) => new(schedule.Id, schedule.LoanApplicationId, schedule.InstallmentNumber, schedule.DueDate, schedule.PrincipalAmount, schedule.InterestAmount, schedule.EmiAmount, schedule.RemainingBalance, schedule.Status);
 

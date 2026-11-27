@@ -11,11 +11,19 @@ public sealed class LoanDbContext(DbContextOptions<LoanDbContext> options) : Ide
 {
     public DbSet<Customer> Customers => Set<Customer>();
     public DbSet<LoanApplication> LoanApplications => Set<LoanApplication>();
+    public DbSet<LoanDisbursementSettings> LoanDisbursementSettings => Set<LoanDisbursementSettings>();
     public DbSet<EmiSchedule> EmiSchedules => Set<EmiSchedule>();
     public DbSet<LoanProduct> LoanProducts => Set<LoanProduct>();
     public DbSet<EmiLateFee> EmiLateFees => Set<EmiLateFee>();
     public DbSet<EmiPayment> EmiPayments => Set<EmiPayment>();
     public DbSet<EmiPaymentAllocation> EmiPaymentAllocations => Set<EmiPaymentAllocation>();
+    public DbSet<LoanForeclosureSettings> LoanForeclosureSettings => Set<LoanForeclosureSettings>();
+    public DbSet<LoanForeclosureChargeRule> LoanForeclosureChargeRules => Set<LoanForeclosureChargeRule>();
+    public DbSet<LoanForeclosure> LoanForeclosures => Set<LoanForeclosure>();
+    public DbSet<LoanForeclosureCharge> LoanForeclosureCharges => Set<LoanForeclosureCharge>();
+    public DbSet<LoanForeclosurePayment> LoanForeclosurePayments => Set<LoanForeclosurePayment>();
+    public DbSet<CompanyDocumentSettings> CompanyDocumentSettings => Set<CompanyDocumentSettings>();
+    public DbSet<LoanDisbursementDocument> LoanDisbursementDocuments => Set<LoanDisbursementDocument>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -38,6 +46,11 @@ public sealed class LoanDbContext(DbContextOptions<LoanDbContext> options) : Ide
             entity.Property(loan => loan.ApplicationNumber).HasMaxLength(32).IsRequired();
             entity.Property(loan => loan.Product).HasMaxLength(80).IsRequired();
             entity.Property(loan => loan.RequestedAmount).HasPrecision(18, 2);
+            entity.Property(loan => loan.ActualDisbursedAmount).HasPrecision(18, 2);
+            entity.Property(loan => loan.ProcessingFeePercentage).HasPrecision(5, 2);
+            entity.Property(loan => loan.ProcessingFeeAmount).HasPrecision(18, 2);
+            entity.Property(loan => loan.PlatformFeePercentage).HasPrecision(5, 2);
+            entity.Property(loan => loan.PlatformFeeAmount).HasPrecision(18, 2);
             entity.Property(loan => loan.InterestRate).HasPrecision(5, 2).HasDefaultValue(0m);
             entity.Property(loan => loan.IsFlatInterest).HasDefaultValue(true);
             entity.Property(loan => loan.Status).HasMaxLength(32).IsRequired();
@@ -47,6 +60,14 @@ public sealed class LoanDbContext(DbContextOptions<LoanDbContext> options) : Ide
             entity.HasOne(loan => loan.Customer).WithMany(customer => customer.LoanApplications).HasForeignKey(loan => loan.CustomerId).OnDelete(DeleteBehavior.Restrict);
             entity.HasQueryFilter(loan => !loan.IsDeleted);
             entity.Property(loan => loan.RowVersion).IsRowVersion();
+        });
+        modelBuilder.Entity<LoanDisbursementSettings>(entity =>
+        {
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.Id).ValueGeneratedNever();
+            entity.Property(x => x.ProcessingFeePercentage).HasPrecision(5, 2);
+            entity.Property(x => x.PlatformFeePercentage).HasPrecision(5, 2);
+            entity.Property(x => x.UpdatedBy).HasMaxLength(256);
         });
         modelBuilder.Entity<EmiSchedule>(entity =>
         {
@@ -115,6 +136,100 @@ public sealed class LoanDbContext(DbContextOptions<LoanDbContext> options) : Ide
             entity.HasOne(allocation => allocation.EmiSchedule).WithMany().HasForeignKey(allocation => allocation.EmiScheduleId).OnDelete(DeleteBehavior.Restrict);
             entity.HasOne(allocation => allocation.EmiLateFee).WithMany(fee => fee.PaymentAllocations).HasForeignKey(allocation => allocation.EmiLateFeeId).OnDelete(DeleteBehavior.Restrict);
             entity.HasQueryFilter(allocation => !allocation.EmiSchedule!.LoanApplication!.IsDeleted);
+        });
+        modelBuilder.Entity<LoanForeclosureSettings>(entity =>
+        {
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.Id).ValueGeneratedNever();
+            entity.Property(x => x.ServiceFeePercentage).HasPrecision(5, 2);
+            entity.Property(x => x.FeeCalculationType).HasMaxLength(32).IsRequired();
+            entity.Property(x => x.UpdatedBy).HasMaxLength(256);
+            entity.HasMany(x => x.ChargeRules).WithOne(x => x.Settings).HasForeignKey(x => x.SettingsId).OnDelete(DeleteBehavior.Cascade);
+        });
+        modelBuilder.Entity<LoanForeclosureChargeRule>(entity =>
+        {
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.Name).HasMaxLength(80).IsRequired();
+            entity.Property(x => x.CalculationType).HasMaxLength(16).IsRequired();
+            entity.Property(x => x.CalculationBasis).HasMaxLength(32).IsRequired();
+            entity.Property(x => x.Percentage).HasPrecision(5, 2);
+            entity.Property(x => x.FixedAmount).HasPrecision(18, 2);
+            entity.HasIndex(x => new { x.SettingsId, x.Name }).IsUnique();
+        });
+        modelBuilder.Entity<LoanForeclosure>(entity =>
+        {
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.ForeclosureNumber).HasMaxLength(40).IsRequired();
+            entity.HasIndex(x => x.ForeclosureNumber).IsUnique();
+            entity.HasIndex(x => x.LoanApplicationId).IsUnique();
+            entity.Property(x => x.OutstandingPrincipal).HasPrecision(18, 2);
+            entity.Property(x => x.OutstandingInterest).HasPrecision(18, 2);
+            entity.Property(x => x.OutstandingLateFees).HasPrecision(18, 2);
+            entity.Property(x => x.RemainingEmiAmount).HasPrecision(18, 2);
+            entity.Property(x => x.ServiceFeePercentage).HasPrecision(5, 2);
+            entity.Property(x => x.ServiceFeeAmount).HasPrecision(18, 2);
+            entity.Property(x => x.OtherCharges).HasPrecision(18, 2);
+            entity.Property(x => x.Adjustments).HasPrecision(18, 2);
+            entity.Property(x => x.TotalForeclosureAmount).HasPrecision(18, 2);
+            entity.Property(x => x.AmountPaid).HasPrecision(18, 2);
+            entity.Property(x => x.PaymentStatus).HasMaxLength(24).IsRequired();
+            entity.Property(x => x.ForeclosureStatus).HasMaxLength(24).IsRequired();
+            entity.Property(x => x.PaymentMode).HasMaxLength(32).IsRequired();
+            entity.Property(x => x.TransactionReference).HasMaxLength(128);
+            entity.Property(x => x.Remarks).HasMaxLength(500);
+            entity.Property(x => x.CreatedBy).HasMaxLength(256);
+            entity.Property(x => x.RowVersion).IsRowVersion();
+            entity.HasOne(x => x.LoanApplication).WithMany().HasForeignKey(x => x.LoanApplicationId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasMany(x => x.Charges).WithOne(x => x.LoanForeclosure).HasForeignKey(x => x.LoanForeclosureId).OnDelete(DeleteBehavior.Restrict);
+        });
+        modelBuilder.Entity<LoanForeclosureCharge>(entity =>
+        {
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.Name).HasMaxLength(80).IsRequired();
+            entity.Property(x => x.CalculationType).HasMaxLength(16).IsRequired();
+            entity.Property(x => x.CalculationBasis).HasMaxLength(32).IsRequired();
+            entity.Property(x => x.Percentage).HasPrecision(5, 2);
+            entity.Property(x => x.FixedAmount).HasPrecision(18, 2);
+            entity.Property(x => x.BaseAmount).HasPrecision(18, 2);
+            entity.Property(x => x.Amount).HasPrecision(18, 2);
+            entity.HasIndex(x => x.LoanForeclosureId);
+        });
+        modelBuilder.Entity<LoanForeclosurePayment>(entity =>
+        {
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.Amount).HasPrecision(18, 2);
+            entity.Property(x => x.Method).HasMaxLength(32).IsRequired();
+            entity.Property(x => x.Reference).HasMaxLength(128);
+            entity.Property(x => x.CollectedBy).HasMaxLength(256);
+            entity.Property(x => x.IdempotencyKey).HasMaxLength(64);
+            entity.HasIndex(x => x.IdempotencyKey).IsUnique().HasFilter("[IdempotencyKey] IS NOT NULL");
+            entity.HasIndex(x => x.ReceivedAt);
+            entity.HasOne(x => x.LoanForeclosure).WithMany(f => f.Payments).HasForeignKey(x => x.LoanForeclosureId).OnDelete(DeleteBehavior.Restrict);
+        });
+        modelBuilder.Entity<CompanyDocumentSettings>(entity =>
+        {
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.Id).ValueGeneratedNever();
+            entity.Property(x => x.CompanyName).HasMaxLength(160).IsRequired();
+            entity.Property(x => x.Address).HasMaxLength(500);
+            entity.Property(x => x.Phone).HasMaxLength(32);
+            entity.Property(x => x.Email).HasMaxLength(254);
+            entity.Property(x => x.Website).HasMaxLength(200);
+            entity.Property(x => x.AuthorizedSignatoryName).HasMaxLength(120);
+            entity.Property(x => x.AuthorizedSignatoryDesignation).HasMaxLength(120);
+            entity.Property(x => x.FooterDisclaimer).HasMaxLength(2000);
+            entity.Property(x => x.LogoContentType).HasMaxLength(32);
+            entity.Property(x => x.SignatureContentType).HasMaxLength(32);
+            entity.Property(x => x.StampContentType).HasMaxLength(32);
+        });
+        modelBuilder.Entity<LoanDisbursementDocument>(entity =>
+        {
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.DocumentNumber).HasMaxLength(64).IsRequired();
+            entity.Property(x => x.PdfContent).HasColumnType("varbinary(max)").IsRequired();
+            entity.HasIndex(x => x.LoanApplicationId).IsUnique();
+            entity.HasIndex(x => x.DocumentNumber).IsUnique();
+            entity.HasOne(x => x.LoanApplication).WithOne().HasForeignKey<LoanDisbursementDocument>(x => x.LoanApplicationId).OnDelete(DeleteBehavior.Restrict);
         });
     }
 

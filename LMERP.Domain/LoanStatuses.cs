@@ -8,4 +8,5 @@ public static class LoanStatuses
     public const string Rejected = "Rejected";
     public const string Disbursed = "Disbursed";
     public const string Closed = "Closed";
+    public const string Foreclosed = "Foreclosed";
 }

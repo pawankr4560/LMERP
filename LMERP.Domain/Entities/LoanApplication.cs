@@ -8,6 +8,13 @@ public sealed class LoanApplication
     public Customer? Customer { get; set; }
     public string Product { get; set; } = string.Empty;
     public decimal RequestedAmount { get; set; }
+    // RequestedAmount remains the principal used to build the EMI schedule. These fields
+    // snapshot the fee rules and net cash paid to the customer at disbursement.
+    public decimal? ActualDisbursedAmount { get; set; }
+    public decimal? ProcessingFeePercentage { get; set; }
+    public decimal? ProcessingFeeAmount { get; set; }
+    public decimal? PlatformFeePercentage { get; set; }
+    public decimal? PlatformFeeAmount { get; set; }
     public int TenureMonths { get; set; }
     public decimal InterestRate { get; set; }
     public bool IsFlatInterest { get; set; } = true;

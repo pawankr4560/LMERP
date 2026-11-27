@@ -6,6 +6,7 @@ using LMERP.Domain.Entities;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Configuration;
+using LMERP.Domain;
 
 namespace LMERP.Infrastructure.Persistence;
 
@@ -16,7 +17,9 @@ public sealed class EmiRepaymentService(LoanDbContext db, IBusinessClock busines
         var today = BusinessToday();
         var schedules = await db.EmiSchedules.AsNoTracking().Include(s => s.LoanApplication).ThenInclude(l => l!.Customer)
             .Include(s => s.LateFees).Include(s => s.Payments).ThenInclude(p => p.Allocations)
-            .Where(s => s.Status != "Paid" || s.LateFees.Any(f => f.Status == "Pending"))
+            .Where(s => s.LoanApplication!.Status == LoanStatuses.Disbursed
+                && !db.LoanForeclosures.Any(f => f.LoanApplicationId == s.LoanApplicationId && f.ForeclosureStatus != "Paid" && f.ForeclosureStatus != "Cancelled")
+                && (s.Status != "Paid" || s.LateFees.Any(f => f.Status == "Pending")))
             .OrderBy(s => s.DueDate).ToListAsync(ct);
         return schedules.Where(s => DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(s.DueDate, BusinessTimeZone()).DateTime) < today)
             .Select(ToResponse).Where(x => x.TotalOutstanding > 0).ToArray();
@@ -94,6 +97,9 @@ public sealed class EmiRepaymentService(LoanDbContext db, IBusinessClock busines
             if (replay is not null) return ToPaymentResponse(replay);
         }
         var schedule = await LoadSchedule(scheduleId, ct) ?? throw new NotFoundException("EMI schedule was not found.");
+        if (schedule.LoanApplication?.Status != LoanStatuses.Disbursed) throw new ConflictException("Payments can only be collected for an active, disbursed loan.");
+        if (await db.LoanForeclosures.AnyAsync(f => f.LoanApplicationId == schedule.LoanApplicationId && f.ForeclosureStatus != "Paid" && f.ForeclosureStatus != "Cancelled", ct))
+            throw new ConflictException("An active foreclosure settlement is in progress for this loan.");
         await ProcessScheduleFeesAsync(schedule, ct);
         await db.SaveChangesAsync(ct);
         var outstandingEmi = EmiOutstanding(schedule);
@@ -164,7 +170,8 @@ public sealed class EmiRepaymentService(LoanDbContext db, IBusinessClock busines
     public async Task<int> ProcessDailyFeesAsync(CancellationToken ct)
     {
         var schedules = await db.EmiSchedules.Include(s => s.LoanApplication).Include(s => s.LateFees).ThenInclude(f => f.PaymentAllocations)
-            .Where(s => s.Status != "Paid").ToListAsync(ct);
+            .Where(s => s.Status != "Paid" && s.Status != "Foreclosed" && s.LoanApplication!.Status == LoanStatuses.Disbursed
+                && !db.LoanForeclosures.Any(f => f.LoanApplicationId == s.LoanApplicationId && f.ForeclosureStatus != "Paid" && f.ForeclosureStatus != "Cancelled")).ToListAsync(ct);
         var created = 0;
         foreach (var schedule in schedules)
             created += await ProcessScheduleFeesAsync(schedule, ct);
@@ -184,6 +191,8 @@ public sealed class EmiRepaymentService(LoanDbContext db, IBusinessClock busines
 
     private async Task<int> ProcessScheduleFeesAsync(EmiSchedule schedule, CancellationToken ct)
     {
+        if (schedule.LoanApplication?.Status != LoanStatuses.Disbursed || await db.LoanForeclosures.AnyAsync(f => f.LoanApplicationId == schedule.LoanApplicationId && f.ForeclosureStatus != "Paid" && f.ForeclosureStatus != "Cancelled", ct))
+            return 0;
         var outstanding = await EmiOutstandingAsync(schedule.Id, ct);
         if (outstanding <= 0)
         {
