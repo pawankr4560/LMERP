@@ -1,6 +1,7 @@
 using LMERP.Server.Auth;
 using LMERP.Server.Responses;
 using LMERP.Application.Abstractions;
+using LMERP.Server.ExceptionHandling;
 using LMERP.Infrastructure.Identity;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
@@ -27,7 +28,7 @@ public sealed class AuthController(
     {
         var user = await users.FindByEmailAsync(request.Email.Trim());
         if (user is null || !user.IsActive || !(await signIn.CheckPasswordSignInAsync(user, request.Password, lockoutOnFailure: true)).Succeeded)
-            return Unauthorized(BaseResponse<LoginResponse>.Failed("Email or password is incorrect."));
+            return Unauthorized(ApiProblemDetails.Create(HttpContext, StatusCodes.Status401Unauthorized, "Unauthorized", "Email or password is incorrect."));
 
         var (token, expiresAt) = await tokens.IssueAsync(user);
         var refreshToken = CreateRefreshToken(user.Id);
@@ -40,13 +41,13 @@ public sealed class AuthController(
     public async Task<ActionResult<BaseResponse<LoginResponse>>> Refresh(CancellationToken cancellationToken)
     {
         if (!Request.Cookies.TryGetValue(RefreshCookieName, out var refreshToken) || !TryGetUserId(refreshToken, out var userId))
-            return Unauthorized(BaseResponse<LoginResponse>.Failed("Your session has expired. Sign in again."));
+            return Unauthorized(ApiProblemDetails.Create(HttpContext, StatusCodes.Status401Unauthorized, "Unauthorized", "Your session has expired. Sign in again."));
 
         var user = await users.FindByIdAsync(userId.ToString());
         if (user is null || !user.IsActive)
         {
             DeleteRefreshCookie();
-            return Unauthorized(BaseResponse<LoginResponse>.Failed("Your session has expired. Sign in again."));
+            return Unauthorized(ApiProblemDetails.Create(HttpContext, StatusCodes.Status401Unauthorized, "Unauthorized", "Your session has expired. Sign in again."));
         }
 
         var nextRefreshToken = CreateRefreshToken(user.Id);
@@ -58,7 +59,7 @@ public sealed class AuthController(
         if (!rotated)
         {
             DeleteRefreshCookie();
-            return Unauthorized(BaseResponse<LoginResponse>.Failed("Your session has expired. Sign in again."));
+            return Unauthorized(ApiProblemDetails.Create(HttpContext, StatusCodes.Status401Unauthorized, "Unauthorized", "Your session has expired. Sign in again."));
         }
 
         var (token, expiresAt) = await tokens.IssueAsync(user);

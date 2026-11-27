@@ -27,7 +27,7 @@
   <ItemGroup>
     <ProjectReference Include="..\LMERP.Application\LMERP.Application.csproj" />
     <ProjectReference Include="..\LMERP.Infrastructure\LMERP.Infrastructure.csproj" />
-    <ProjectReference Include="..\lmerp.client\lmerp.client.esproj">
+    <ProjectReference Include="..\lmerp.client\lmerp.client.esproj" Condition="'$(SkipAngularProject)' != 'true'">
       <ReferenceOutputAssembly>false</ReferenceOutputAssembly>
     </ProjectReference>
   </ItemGroup>

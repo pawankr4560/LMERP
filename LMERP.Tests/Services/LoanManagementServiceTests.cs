@@ -186,5 +186,6 @@ public sealed class LoanManagementServiceTests
         public Task<LoanProduct?> GetLoanProductAsync(string name, CancellationToken cancellationToken) => Task.FromResult(ActiveProducts.Contains(name) ? new LoanProduct { Name = name, IsActive = true } : null);
         public Task<IReadOnlyList<EmiSchedule>> GetEmiScheduleAsync(int loanId, CancellationToken cancellationToken) => throw new NotImplementedException();
         public Task<DashboardSummary> GetDashboardSummaryAsync(CancellationToken cancellationToken) => throw new NotImplementedException();
+        public Task<IReadOnlyList<DashboardTransactionResponse>> GetRecentDashboardTransactionsAsync(CancellationToken cancellationToken) => throw new NotImplementedException();
     }
 }

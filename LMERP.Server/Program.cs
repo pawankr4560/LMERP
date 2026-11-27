@@ -5,8 +5,7 @@ using LMERP.Infrastructure;
 using LMERP.Infrastructure.Identity;
 using LMERP.Infrastructure.Persistence;
 using LMERP.Application.Services;
-using LMERP.Server.Middleware;
-using LMERP.Server.Responses;
+using LMERP.Server.ExceptionHandling;
 using LMERP.Server.Extensions;
 using System.Security.Claims;
 using System.IdentityModel.Tokens.Jwt;
@@ -52,6 +51,8 @@ namespace LMERP.Server
                 options.Lockout.DefaultLockoutTimeSpan = TimeSpan.FromMinutes(15);
             }).AddRoles<IdentityRole<int>>().AddEntityFrameworkStores<LoanDbContext>().AddSignInManager();
             builder.Services.AddScoped<JwtTokenIssuer>();
+            builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
+            builder.Services.AddProblemDetails();
             builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme).AddJwtBearer(options =>
             {
                 options.TokenValidationParameters = new TokenValidationParameters
@@ -90,13 +91,13 @@ namespace LMERP.Server
                         context.HandleResponse();
                         context.Response.StatusCode = StatusCodes.Status401Unauthorized;
                         context.Response.ContentType = "application/json";
-                        await context.Response.WriteAsJsonAsync(BaseResponse<object>.Failed("Authentication is required."));
+                        await ApiProblemDetails.WriteAsync(context.Response.HttpContext, StatusCodes.Status401Unauthorized, "Unauthorized", "Authentication is required.");
                     },
                     OnForbidden = async context =>
                     {
                         context.Response.StatusCode = StatusCodes.Status403Forbidden;
                         context.Response.ContentType = "application/json";
-                        await context.Response.WriteAsJsonAsync(BaseResponse<object>.Failed("You do not have permission to perform this action."));
+                        await ApiProblemDetails.WriteAsync(context.Response.HttpContext, StatusCodes.Status403Forbidden, "Forbidden", "You do not have permission to perform this action.");
                     }
                 };
             });
@@ -113,7 +114,7 @@ namespace LMERP.Server
                     context.HttpContext.Response.ContentType = "application/json";
                     if (context.Lease.TryGetMetadata(MetadataName.RetryAfter, out var retryAfter))
                         context.HttpContext.Response.Headers.RetryAfter = Math.Ceiling(retryAfter.TotalSeconds).ToString(System.Globalization.CultureInfo.InvariantCulture);
-                    await context.HttpContext.Response.WriteAsJsonAsync(BaseResponse<object>.Failed("Too many sign-in attempts. Try again later."), token);
+                    await ApiProblemDetails.WriteAsync(context.HttpContext, StatusCodes.Status429TooManyRequests, "Too many requests", "Too many sign-in attempts. Try again later.", token);
                 };
             });
             builder.Services.AddAuthorization();
@@ -123,7 +124,8 @@ namespace LMERP.Server
                 {
                     var errors = context.ModelState.Values.SelectMany(value => value.Errors)
                         .Select(error => string.IsNullOrWhiteSpace(error.ErrorMessage) ? "The supplied value is invalid." : error.ErrorMessage).ToArray();
-                    return new BadRequestObjectResult(BaseResponse<object>.Failed("Request validation failed.", errors));
+                    var problem = ApiProblemDetails.Create(context.HttpContext, StatusCodes.Status400BadRequest, "Invalid request", "Request validation failed.", errors);
+                    return new BadRequestObjectResult(problem);
                 };
             });
             builder.Services.AddEndpointsApiExplorer();
@@ -144,7 +146,7 @@ namespace LMERP.Server
                 await IdentitySeeder.SeedAsync(scope.ServiceProvider, builder.Configuration);
             }
 
-            app.UseMiddleware<ApiExceptionMiddleware>();
+            app.UseExceptionHandler();
             if (!app.Environment.IsDevelopment()) app.UseHsts();
             app.UseSecurityHeaders();
             app.UseRouting();
@@ -171,7 +173,7 @@ namespace LMERP.Server
             app.Map("/api/{**path}", (HttpContext context) =>
             {
                 context.Response.StatusCode = StatusCodes.Status404NotFound;
-                return context.Response.WriteAsJsonAsync(BaseResponse<object>.Failed("API endpoint was not found."));
+                return ApiProblemDetails.WriteAsync(context, StatusCodes.Status404NotFound, "API endpoint not found", "API endpoint was not found.");
             });
 
             app.MapFallbackToFile("/index.html");
